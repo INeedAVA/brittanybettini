@@ -2,7 +2,7 @@
 import sys, json, subprocess
 from engine import *
 
-OUT = sys.argv[1]; os.makedirs(OUT, exist_ok=True)
+OUT = sys.argv[1] if len(sys.argv) > 1 else "/tmp/unused"; os.makedirs(OUT, exist_ok=True)
 SFX_FOR = {"hblur": "whoosh", "zoomin": "whoosh", "smoothleft": "whoosh", "smoothup": "swish", "slideup": "swish",
            "slideleft": "swish", "fadewhite": "impact", "fade": None, "fadeblack": None, "cut": None}
 
@@ -66,10 +66,10 @@ def reel1():
 
 def shift_transitions(edl):
     """Rows mark the transition that brings them IN; engine wants it on the row going OUT."""
-    rows = [dict(e) for e in edl]
-    for i in range(len(rows) - 1, 0, -1):
-        if "tr" in rows[i]:
-            rows[i - 1]["tr"], rows[i - 1]["td"] = rows[i].pop("tr"), rows[i].pop("td")
+    rows = [{k: v for k, v in e.items() if k not in ("tr", "td")} for e in edl]
+    for i in range(1, len(edl)):
+        if "tr" in edl[i]:
+            rows[i - 1]["tr"], rows[i - 1]["td"] = edl[i]["tr"], edl[i]["td"]
     return rows
 
 
@@ -173,5 +173,6 @@ def reel3():
     return build("r3_", edl, "reel3", 108, 16, [], ov, f"{OUT}/Reel3_Your-First-Visit.mp4", amb=0.2)
 
 
-for name in (sys.argv[2:] or ["reel1", "reel2", "reel3"]):
-    print(name, globals()[name]())
+if __name__ == "__main__":
+    for name in (sys.argv[2:] or ["reel1", "reel2", "reel3"]):
+        print(name, globals()[name]())

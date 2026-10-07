@@ -75,15 +75,17 @@ def assemble(shots, out):
     each shot file must be length + tdur_in/2 + tdur_out/2 long and start tdur_in/2 early."""
     inputs, fc = [], []
     for f, *_ in shots: inputs += ["-i", f]
-    vlast, alast, acc = "0:v", "0:a", 0.0
+    for i, sh in enumerate(shots):
+        fc.append(f"[{i}:a]atrim=duration={sh[4]:.4f},asetpts=PTS-STARTPTS[ta{i}]")
+    vlast, alast, acc = "0:v", "ta0", 0.0
     for i in range(1, len(shots)):
-        _, L_prev, tr, td = shots[i - 1]
+        _, L_prev, tr, td, _d = shots[i - 1]
         acc += L_prev
         hard = td <= 1.01 / FPS
         off = acc if hard else acc - td / 2       # soft transitions are centred on the nominal cut
         # xfade offset is measured on the accumulated output stream
         fc.append(f"[{vlast}][{i}:v]xfade=transition={tr}:duration={td:.3f}:offset={off - (0):.3f}[v{i}]")
-        fc.append(f"[{alast}][{i}:a]acrossfade=d={td:.3f}:c1=tri:c2=tri[a{i}]")
+        fc.append(f"[{alast}][ta{i}]acrossfade=d={td:.4f}:c1=tri:c2=tri[a{i}]")
         vlast, alast = f"v{i}", f"a{i}"
     run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(fc), "-map", f"[{vlast}]", "-map", f"[{alast}]",
          "-c:v", "libx264", "-preset", "fast", "-crf", "15", "-c:a", "pcm_s16le", out])
@@ -103,13 +105,14 @@ def edl_to_shots(prefix, edl):
         hard_out = (not last) and e.get("tr", "cut") == "cut"
         L = e.pop("L"); tr = e.pop("tr", "cut"); e.pop("td", None)
         dur = L + td_in / 2 + (td_out if hard_out else td_out / 2)
+        pad = 0 if last else 3 / FPS             # frame-rounding headroom; xfade drops the unused tail
         if e.get("card"):
-            f = card(f"{prefix}{i:02d}", e["card"], round(dur, 3))
+            f = card(f"{prefix}{i:02d}", e["card"], round(dur + pad, 3))
         else:
             e.pop("card", None)
             name = e.pop("name"); ss = max(0, e.pop("ss", 0) - td_in / 2 * e.get("speed", 1.0))
-            f = shot(f"{prefix}{i:02d}", name, round(ss, 3), round(dur, 3), **e)
-        shots.append((f, L, "fade" if hard_out else tr, td_out))
+            f = shot(f"{prefix}{i:02d}", name, round(ss, 3), round(dur + pad, 3), **e)
+        shots.append((f, L, "fade" if hard_out else tr, td_out, dur))
     return shots
 
 
