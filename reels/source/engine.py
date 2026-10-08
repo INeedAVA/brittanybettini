@@ -7,8 +7,12 @@ S = os.path.dirname(os.path.abspath(__file__))
 TMP = f"{S}/build2"; os.makedirs(TMP, exist_ok=True)
 W, H, FPS = 1080, 1920, 30
 BLACK, IVORY, GOLD, TAUPE = (11, 11, 11), (245, 241, 232), (194, 166, 107), (169, 157, 140)
-GRADE = ("eq=contrast=1.05:saturation=1.04:gamma=0.98,"
-         "colorbalance=rs=0.015:bs=-0.02:rm=0.01:bm=-0.015,unsharp=5:5:0.3")
+# subtle cinematic look: gentle S-curve with lifted blacks, teal shadows / warm highlights,
+# slightly restrained saturation, light vignette and fine film grain
+GRADE = ("eq=contrast=1.03:saturation=0.98:gamma=0.98,"
+         "curves=master='0/0.03 0.25/0.215 0.5/0.5 0.78/0.81 1/0.97',"
+         "colorbalance=rs=-0.02:bs=0.03:rm=0.015:bm=-0.01:rh=0.045:gh=0.012:bh=-0.04,"
+         "unsharp=5:5:0.25,vignette=angle=0.38,noise=alls=3:allf=t")
 
 
 def run(cmd):
