@@ -38,21 +38,23 @@ def build(prefix, edl, which, bpm, bars, extra_sfx, overlays, out, amb):
 # =========================== REEL 1: POV: your new salon has a bar (reach) ===========================
 def reel1():
     b = 60 / 124; B = 4 * b; h = 2 * b                     # beat, bar, half-bar
-    W_ = dict(tr="hblur", td=0.18)                           # whip transition
+    W_ = dict(tr="hblur", td=0.16)                           # whip, used only twice
+    q = b
     edl = [
         dict(name="JV3A6846", ss=0.3, L=B, speed=1.6, x=0.5),                         # door opens, Artisan waves
-        dict(name="v_113635_237", ss=3.6, L=h, punch=0.10),                          # DROP: cocktail arrives
-        dict(name="JV3A7256", ss=3.0, L=h, rot="cw", push=0.08, **W_),               # the bar
-        dict(name="JV3A7284", L=h, still=True, punch=0.08),                          # guest raises a glass
-        dict(name="JV3A6924", ss=1.0, L=h, rot="ccw", punch=0.06, **W_),             # hot towel steam
-        dict(name="JV3A7317", L=h, still=True, punch=0.08),                          # blonde sips wine
-        dict(name="v_113643_410", ss=0.3, L=h, punch=0.06, **W_),                    # cappuccino, sugar tongs
+        dict(name="v_113635_237", ss=3.6, L=h, punch=0.10),                          # DROP: cocktail arrives (clean cut on the drop)
+        dict(name="JV3A7256", ss=3.0, L=h, rot="cw", push=0.08, **W_),               # whip into the bar
+        dict(name="JV3A7284", L=h, still=True, punch=0.06),                          # guest raises a glass
+        dict(name="JV3A6924", ss=1.0, L=h, rot="ccw", push=0.05),                    # hot towel steam
+        dict(name="JV3A7317", L=h, still=True, punch=0.06),                          # blonde sips wine
+        dict(name="v_113643_410", ss=0.3, L=h, push=0.05),                           # cappuccino, sugar tongs
         dict(name="JV3A7253", ss=0.5, L=h, rot="cw", push=0.06),                     # chandeliers
-        dict(name="JV3A7063", ss=2.3, L=h, rot="ccw", punch=0.06, **W_),             # curly guest laughing
-        dict(name="JV3A7100", ss=11.0, L=h, rot="ccw", push=0.05),                   # steam at the bowl
-        dict(name="JV3A7054", ss=6.2, L=h, rot="ccw", punch=0.06, **W_),             # blonde reveal
+        dict(name="JV3A7063", ss=2.3, L=h, rot="ccw", punch=0.05),                   # curly guest laughing
+        dict(name="JV3A7100", ss=11.0, L=h, rot="ccw", push=0.05),                   # steam at the bowl (match on steam)
+        dict(name="JV3A7054", ss=2.4, L=q, rot="ccw", speed=2.4, **W_),              # whip + speed ramp: chair spins fast...
+        dict(name="JV3A7054", ss=3.56, L=q, rot="ccw", speed=0.7),                   # ...and lands in slow motion on her smile
         dict(name="JV3A7053", ss=6.3, L=h, rot="ccw", push=0.05),                    # laughing with her Artisan
-        dict(name="v_113631_695", ss=0.0, L=h, punch=0.06),                          # the laugh, loops to the door
+        dict(name="v_113631_695", ss=0.0, L=h, punch=0.05),                          # the laugh, loops to the door
     ]
     # whips sit on the cut INTO the next shot: move tr/td to the preceding row
     edl = shift_transitions(edl)
@@ -75,23 +77,23 @@ def shift_transitions(edl):
 
 # =========================== REEL 2: The House (brand) ===========================
 def reel2():
-    b = 60 / 116; B = 4 * b; h = 2 * b
+    b = 60 / 116; B = 4 * b; h = 2 * b; q = b
     edl = shift_transitions([
-        dict(name="JV3A6847", ss=0.3, L=B, x=0.47, push=0.05),                                  # gold barber pole
-        dict(name="JV3A7260", ss=8.0, L=B, rot="cw", push=0.08, tr="zoomin", td=0.35),          # reception arch
-        dict(name="JV3A7253", ss=0.3, L=B, rot="cw", speed=0.75, tr="smoothup", td=0.35),       # chandeliers
-        dict(name="JV3A6887", ss=2.0, L=h, x=0.5, push=0.04, tr="slideleft", td=0.3),                                    # retail wall
-        dict(name="JV3A6888", ss=1.0, L=h, rot="ccw", push=0.05, tr="circleopen", td=0.35),                                # crystal pendants
-        dict(name="JV3A6924", ss=0.5, L=B, rot="ccw", speed=0.6, tr="fadewhite", td=0.3),       # hot towel steam
-        dict(name="JV3A7004", ss=2.0, L=B, rot="ccw", speed=0.7, tr="fade", td=0.35),           # straight razor
-        dict(name="JV3A7100", ss=9.0, L=B, rot="ccw", speed=0.7, tr="zoomin", td=0.35),         # steam at the bowl
-        dict(name="JV3A7210", ss=1.0, L=h, rot="cw", speed=0.8, tr="smoothright", td=0.3),                                 # scissors
-        dict(name="JV3A7207", ss=5.0, L=h, rot="cw", speed=0.8, tr="hblur", td=0.2),                                 # scissors 2
-        dict(name="JV3A7147", ss=5.5, L=B, rot="cw", tr="fade", td=0.35),                       # diffused curls
-        dict(name="JV3A7017", ss=13.0, L=B, rot="ccw", tr="smoothleft", td=0.35),               # curling iron
-        dict(name="JV3A7063", ss=2.0, L=B, rot="ccw", tr="zoomin", td=0.35),                    # the guest, laughing
-        dict(name="JV3A7064", ss=5.6, L=B, rot="ccw", tr="fade", td=0.3),                       # Artisan walks to camera
-        dict(card=None, L=2 * B, tr="fadeblack", td=0.6),                                        # end card
+        dict(name="JV3A6847", ss=0.3, L=B, x=0.47, push=0.05),                         # gold barber pole
+        dict(name="JV3A7260", ss=8.0, L=B, rot="cw", push=0.07),                       # reception arch (clean cut)
+        dict(name="JV3A7253", ss=0.3, L=h, rot="cw", speed=0.75),                      # chandeliers
+        dict(name="JV3A6888", ss=1.0, L=h, rot="ccw", push=0.05),                      # crystal pendants
+        dict(name="JV3A6924", ss=0.3, L=q, rot="ccw", speed=2.0),                      # speed ramp: towel goes on fast...
+        dict(name="JV3A6924", ss=1.33, L=B - q, rot="ccw", speed=0.5),                 # ...then steam in slow motion
+        dict(name="JV3A7100", ss=9.0, L=B, rot="ccw", speed=0.7),                      # MATCH CUT: steam to steam
+        dict(name="JV3A7004", ss=2.6, L=q, rot="ccw"),                                 # detail burst on the beat:
+        dict(name="JV3A7210", ss=1.0, L=q, rot="cw"),                                  #   razor, scissors,
+        dict(name="JV3A7017", ss=13.0, L=q, rot="ccw"),                                #   curling iron,
+        dict(name="JV3A7210", ss=11.7, L=q, rot="cw"),                                 #   scissors
+        dict(name="JV3A7147", ss=5.5, L=B, rot="cw", tr="hblur", td=0.16),             # whip on the hair movement: diffused curls
+        dict(name="JV3A7063", ss=2.0, L=B, rot="ccw", push=0.04),                      # the guest, laughing
+        dict(name="JV3A7064", ss=5.6, L=B, rot="ccw"),                                 # Artisan walks to camera
+        dict(card=None, L=2 * B, tr="fadeblack", td=0.5),                              # end card
     ])
 
     def endcard(im, d):
@@ -106,7 +108,8 @@ def reel2():
         shadowed(im, lambda dd, c: tracked(dd, (W / 2, 1180), "Come as you are.", f, c or IVORY), 16, 200)
         shadowed(im, lambda dd, c: tracked(dd, (W / 2, 1265), "Leave more yourself.", f, c or IVORY), 16, 200)
     t_line = sum(e["L"] for e in edl[:12])
-    return build("r2_", edl, "reel2", 116, 14, [[5 * B, "riser"]],
+    total = sum(e["L"] for e in edl)
+    return build("r2_", edl, "reel2", 116, round(total / B), [[4 * B, "riser"]],
                  [(layer("r2_line", line), round(t_line + 0.3, 3), round(t_line + 2 * B - 0.2, 3), 0.4, "rise")],
                  f"{OUT}/Reel2_The-House.mp4", amb=0.25)
 
@@ -114,23 +117,23 @@ def reel2():
 # =========================== REEL 3: Your first visit (conversion) ===========================
 def reel3():
     b = 60 / 108; B = 4 * b; h = 2 * b
-    S_ = dict(tr="slideup", td=0.35)
     edl = shift_transitions([
         dict(name="JV3A6849", L=B, still=True, push=0.10),                                       # exterior
-        dict(name="JV3A6852", L=B, still=True, push=0.08, tr="smoothleft", td=0.35),             # reception
-        dict(name="v_113643_410", ss=0.3, L=B, push=0.06, **S_),                                 # 01 coffee
-        dict(name="JV3A7306", L=B, still=True, push=0.08, tr="zoomin", td=0.35),                                       # 01 guest with a drink
-        dict(name="JV3A7205", ss=1.5, L=B, rot="cw", **S_),                                      # 02 consultation
-        dict(name="JV3A7205", ss=12.0, L=B, rot="cw", tr="smoothleft", td=0.3),                                           # 02 Artisan explains
-        dict(name="JV3A7097", ss=3.0, L=B, rot="ccw", **S_),                                     # 03 wash
-        dict(name="JV3A7101", ss=4.0, L=B, rot="ccw", tr="fade", td=0.4),                                           # 03 steam
-        dict(name="JV3A7210", ss=4.5, L=h, rot="cw", **S_),                                      # 04 cutting
-        dict(name="JV3A7176", ss=10.0, L=h, rot="cw", tr="hblur", td=0.2),                                           # 04 colour
-        dict(name="JV3A7017", ss=16.0, L=B, rot="ccw", tr="smoothright", td=0.3),                                          # 04 styling
-        dict(name="JV3A6895", ss=9.0, L=B, rot="ccw", **S_),                                     # 05 fade
-        dict(name="JV3A6921", ss=3.0, L=B, rot="ccw", tr="zoomin", td=0.35),                                           # 05 hot towel
-        dict(name="JV3A7054", ss=6.2, L=B, rot="ccw", **S_),                                     # 06 reveal
-        dict(name="JV3A7053", ss=6.3, L=B, rot="ccw", tr="circleopen", td=0.35),                                           # 06 laughing
+        dict(name="JV3A6852", L=B, still=True, push=0.08),                                       # reception
+        dict(name="v_113643_410", ss=0.3, L=B, push=0.05),                                       # 01 coffee
+        dict(name="JV3A7306", L=B, still=True, push=0.06),                                       # 01 guest with a drink
+        dict(name="JV3A7205", ss=1.5, L=B, rot="cw"),                                            # 02 consultation
+        dict(name="JV3A7205", ss=12.0, L=B, rot="cw"),                                           # 02 Artisan explains
+        dict(name="JV3A7097", ss=3.0, L=B, rot="ccw"),                                           # 03 wash
+        dict(name="JV3A7101", ss=4.0, L=B, rot="ccw"),                                           # 03 steam
+        dict(name="JV3A7210", ss=4.5, L=h, rot="cw"),                                            # 04 cutting
+        dict(name="JV3A7176", ss=10.0, L=h, rot="cw", tr="hblur", td=0.16),                      # 04 whip on the hand movement into colour
+        dict(name="JV3A7017", ss=16.0, L=B, rot="ccw"),                                          # 04 styling
+        dict(name="JV3A6895", ss=9.0, L=B, rot="ccw"),                                           # 05 fade
+        dict(name="JV3A6921", ss=3.0, L=B, rot="ccw"),                                           # 05 hot towel
+        dict(name="JV3A7054", ss=2.4, L=h, rot="ccw", speed=2.4),                                # 06 speed ramp: the chair spins...
+        dict(name="JV3A7054", ss=5.07, L=h, rot="ccw", speed=0.7),                               # ...and lands slow on the reveal
+        dict(name="JV3A7053", ss=6.3, L=B, rot="ccw"),                                           # 06 laughing
         dict(card=None, L=2 * B, tr="fade", td=0.4),
     ])
 
@@ -166,11 +169,11 @@ def reel3():
     for e in edl: t.append(t[-1] + e["L"])
     steps = [(1, "Coffee, a cocktail or a whiskey.", "Your call.", 2, 4), (2, "Your Artisan maps it out", "before anything is cut.", 4, 6),
              (3, "A steam wash and", "a proper scalp massage.", 6, 8), (4, "Precision cutting, colour", "and styling.", 8, 11),
-             (5, "Barbering too, right down", "to the hot towel.", 11, 13), (6, "You leave more yourself.", "", 13, 15)]
+             (5, "Barbering too, right down", "to the hot towel.", 11, 13), (6, "You leave more yourself.", "", 13, 16)]
     ov = [(layer("r3_hook", hook), 0.0, round(t[2] - 0.1, 3), 0.01)]
     for n, l1, l2, a, z in steps:
         ov.append((step(n, l1, l2), round(t[a] + 0.25, 3), round(t[z] - 0.15, 3), 0.25, "rise"))
-    return build("r3_", edl, "reel3", 108, 16, [], ov, f"{OUT}/Reel3_Your-First-Visit.mp4", amb=0.2)
+    return build("r3_", edl, "reel3", 108, round(sum(e["L"] for e in edl) / B), [], ov, f"{OUT}/Reel3_Your-First-Visit.mp4", amb=0.2)
 
 
 if __name__ == "__main__":
