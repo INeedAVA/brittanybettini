@@ -3,7 +3,7 @@ import sys, json, subprocess
 from engine import *
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "/tmp/unused"; os.makedirs(OUT, exist_ok=True)
-SFX_FOR = {"hblur": "whoosh", "zoomin": "whoosh", "smoothleft": "whoosh", "smoothup": "swish", "slideup": "swish",
+SFX_FOR = {"slideleft": "swish", "smoothright": "whoosh", "circleopen": "swish", "hblur": "whoosh", "zoomin": "whoosh", "smoothleft": "whoosh", "smoothup": "swish", "slideup": "swish",
            "slideleft": "swish", "fadewhite": "impact", "fade": None, "fadeblack": None, "cut": None}
 
 
@@ -80,13 +80,13 @@ def reel2():
         dict(name="JV3A6847", ss=0.3, L=B, x=0.47, push=0.05),                                  # gold barber pole
         dict(name="JV3A7260", ss=8.0, L=B, rot="cw", push=0.08, tr="zoomin", td=0.35),          # reception arch
         dict(name="JV3A7253", ss=0.3, L=B, rot="cw", speed=0.75, tr="smoothup", td=0.35),       # chandeliers
-        dict(name="JV3A6887", ss=2.0, L=h, x=0.5, push=0.04),                                    # retail wall
-        dict(name="JV3A6888", ss=1.0, L=h, rot="ccw", push=0.05),                                # crystal pendants
+        dict(name="JV3A6887", ss=2.0, L=h, x=0.5, push=0.04, tr="slideleft", td=0.3),                                    # retail wall
+        dict(name="JV3A6888", ss=1.0, L=h, rot="ccw", push=0.05, tr="circleopen", td=0.35),                                # crystal pendants
         dict(name="JV3A6924", ss=0.5, L=B, rot="ccw", speed=0.6, tr="fadewhite", td=0.3),       # hot towel steam
         dict(name="JV3A7004", ss=2.0, L=B, rot="ccw", speed=0.7, tr="fade", td=0.35),           # straight razor
         dict(name="JV3A7100", ss=9.0, L=B, rot="ccw", speed=0.7, tr="zoomin", td=0.35),         # steam at the bowl
-        dict(name="JV3A7210", ss=1.0, L=h, rot="cw", speed=0.8),                                 # scissors
-        dict(name="JV3A7207", ss=5.0, L=h, rot="cw", speed=0.8),                                 # scissors 2
+        dict(name="JV3A7210", ss=1.0, L=h, rot="cw", speed=0.8, tr="smoothright", td=0.3),                                 # scissors
+        dict(name="JV3A7207", ss=5.0, L=h, rot="cw", speed=0.8, tr="hblur", td=0.2),                                 # scissors 2
         dict(name="JV3A7147", ss=5.5, L=B, rot="cw", tr="fade", td=0.35),                       # diffused curls
         dict(name="JV3A7017", ss=13.0, L=B, rot="ccw", tr="smoothleft", td=0.35),               # curling iron
         dict(name="JV3A7063", ss=2.0, L=B, rot="ccw", tr="zoomin", td=0.35),                    # the guest, laughing
@@ -119,18 +119,18 @@ def reel3():
         dict(name="JV3A6849", L=B, still=True, push=0.10),                                       # exterior
         dict(name="JV3A6852", L=B, still=True, push=0.08, tr="smoothleft", td=0.35),             # reception
         dict(name="v_113643_410", ss=0.3, L=B, push=0.06, **S_),                                 # 01 coffee
-        dict(name="JV3A7306", L=B, still=True, push=0.08),                                       # 01 guest with a drink
+        dict(name="JV3A7306", L=B, still=True, push=0.08, tr="zoomin", td=0.35),                                       # 01 guest with a drink
         dict(name="JV3A7205", ss=1.5, L=B, rot="cw", **S_),                                      # 02 consultation
-        dict(name="JV3A7205", ss=12.0, L=B, rot="cw"),                                           # 02 Artisan explains
+        dict(name="JV3A7205", ss=12.0, L=B, rot="cw", tr="smoothleft", td=0.3),                                           # 02 Artisan explains
         dict(name="JV3A7097", ss=3.0, L=B, rot="ccw", **S_),                                     # 03 wash
-        dict(name="JV3A7101", ss=4.0, L=B, rot="ccw"),                                           # 03 steam
+        dict(name="JV3A7101", ss=4.0, L=B, rot="ccw", tr="fade", td=0.4),                                           # 03 steam
         dict(name="JV3A7210", ss=4.5, L=h, rot="cw", **S_),                                      # 04 cutting
-        dict(name="JV3A7176", ss=10.0, L=h, rot="cw"),                                           # 04 colour
-        dict(name="JV3A7017", ss=16.0, L=B, rot="ccw"),                                          # 04 styling
+        dict(name="JV3A7176", ss=10.0, L=h, rot="cw", tr="hblur", td=0.2),                                           # 04 colour
+        dict(name="JV3A7017", ss=16.0, L=B, rot="ccw", tr="smoothright", td=0.3),                                          # 04 styling
         dict(name="JV3A6895", ss=9.0, L=B, rot="ccw", **S_),                                     # 05 fade
-        dict(name="JV3A6921", ss=3.0, L=B, rot="ccw"),                                           # 05 hot towel
+        dict(name="JV3A6921", ss=3.0, L=B, rot="ccw", tr="zoomin", td=0.35),                                           # 05 hot towel
         dict(name="JV3A7054", ss=6.2, L=B, rot="ccw", **S_),                                     # 06 reveal
-        dict(name="JV3A7053", ss=6.3, L=B, rot="ccw"),                                           # 06 laughing
+        dict(name="JV3A7053", ss=6.3, L=B, rot="ccw", tr="circleopen", td=0.35),                                           # 06 laughing
         dict(card=None, L=2 * B, tr="fade", td=0.4),
     ])
 
