@@ -13,6 +13,18 @@ const REMINDER_EVERY_HOURS = { URGENT: 1, HIGH: 4, NORMAL: 8, LOW: 24 };
 // After this many reminders, the Operations contact is told as well.
 const ESCALATE_AFTER_REMINDERS = 2;
 
+/** First names of the team member for each category, for the AI to mention ("I've passed this to Cyn"). */
+function teamNames_() {
+  const names = {};
+  Object.keys(CATEGORIES).forEach(function (cat) {
+    const r = getRouting_(cat);
+    // Drop notes in brackets, e.g. "Cyn (TEST: goes to smm)" -> "Cyn".
+    const name = r ? r.name.replace(/\s*\(.*\)\s*/g, ' ').trim() : '';
+    if (name) names[cat] = name;
+  });
+  return names;
+}
+
 function getRouting_(category) {
   const rows = readTable_(SHEETS.ROUTING);
   for (let i = 0; i < rows.length; i++) {
@@ -125,7 +137,7 @@ function handleEscalation_(decision, user, source) {
     const existing = findDuplicate_(decision, user, category);
     if (existing) {
       appendHistory_(existing, 'Follow-up from ' + user.name + ': ' + summary);
-      const notified = notifyAssignee_(existing, 'Follow-up on ' + existing.id, summary);
+      const notified = notifyAssignee_(existing, summary);
       audit_({ email: user.email, role: user.role, space: source.spaceId, action: 'TICKET_FOLLOW_UP', ticketId: existing.id });
       return { ticketId: existing.id, isNew: false, notified: notified };
     }
@@ -169,12 +181,13 @@ function handleEscalation_(decision, user, source) {
     });
     ticket.history = historyLine_('Created from a message by ' + user.name);
 
-    const notified = notifyAssignee_(ticket, 'New ' + priority + ' ticket ' + ticket.id, null);
+    const notified = notifyAssignee_(ticket, null);
     if (notified) {
       updateObject_(SHEETS.TICKETS, ticket.row, { 'Status': 'Assigned' });
       appendHistory_(ticket, 'Assigned to ' + (ticket.assigneeName || ticket.assigneeEmail) + ' (private notification sent)');
     } else {
       appendHistory_(ticket, 'Could not send private notification. Ticket left as New.');
+      alertOperations_(ticket, user);
     }
     audit_({ email: user.email, role: user.role, space: source.spaceId, action: 'TICKET_CREATED', ticketId: ticket.id, detail: category + ' / ' + priority });
     return { ticketId: ticket.id, isNew: true, notified: notified };
@@ -198,32 +211,35 @@ function findDuplicate_(decision, user, category) {
 }
 
 /**
- * Sends the private ticket notification to the assignee (or their backup).
+ * Sends the private notification to the assignee (or their backup).
  * Payroll details only go to someone marked Payroll Cleared = YES.
- * @param {string|null} followUp text of a follow-up, or null for a new ticket
+ * @param {string|null} followUp summary of a follow-up message, or null for a new concern
  */
-function notifyAssignee_(ticket, heading, followUp) {
+function notifyAssignee_(ticket, followUp) {
   const routing = getRouting_(ticket.category);
   const cleared = ticket.category !== 'PAYROLL' || (routing && routing.payrollCleared &&
     (ticket.assigneeEmail === routing.email || ticket.assigneeEmail === routing.backupEmail));
+  const firstName = String(ticket.requesterName || '').split(' ')[0] || ticket.requesterName;
+  const kind = CATEGORIES[ticket.category] || ticket.category;
 
   // Google Chat may join single line breaks, so details go in a bullet list
   // and paragraphs are separated by blank lines.
-  const lines = [heading + ' (' + (CATEGORIES[ticket.category] || ticket.category) + ')', ''];
-  lines.push('- Priority: ' + ticket.priority);
-  lines.push('- Respond by: ' + formatTime_(ticket.dueBy));
-  lines.push('- From: ' + ticket.requesterName + ' <' + ticket.requesterEmail + '>');
-  lines.push('- Where: ' + ticket.source + (ticket.sourceLink ? ' - ' + ticket.sourceLink : ''));
+  const lines = [followUp
+    ? ticket.requesterName + ' sent an update about something already passed to you (' + kind + ').'
+    : ticket.requesterName + ' needs help (' + kind + ', ' + ticket.priority.toLowerCase() + ' priority).', ''];
   if (cleared) {
-    lines.push('- Summary: ' + (followUp || ticket.summary));
-    if (!followUp && ticket.recommendedAction) lines.push('- Recommended action: ' + ticket.recommendedAction);
+    lines.push('- What it\'s about: ' + (followUp || ticket.summary));
+    if (!followUp && ticket.recommendedAction) lines.push('- Suggested next step: ' + ticket.recommendedAction);
   } else {
-    lines.push('- Details: withheld. This is a confidential payroll matter; please hand it to the authorised payroll contact.');
+    lines.push('- What it\'s about: a confidential payroll matter. Details are withheld here; please hand it to the authorised payroll contact.');
   }
+  lines.push('- Where: ' + ticket.source + (ticket.sourceLink ? ' - ' + ticket.sourceLink : ''));
+  lines.push('- Contact: ' + ticket.requesterEmail);
+  lines.push('- Please reply by: ' + formatTime_(ticket.dueBy));
   lines.push('');
-  lines.push('To update it, reply here with:  `status ' + ticket.id + ' in progress`  (or assigned, awaiting response, resolved). You can add a note after the status.');
+  lines.push('Please reach out to ' + firstName + ' directly. When it\'s handled, reply here with:  `done ' + ticket.id + '`');
   lines.push('');
-  lines.push('_Sent by INAVA Assist (AI). Summaries are AI-generated; check the source conversation before acting._');
+  lines.push('_Ref ' + ticket.id + ' \u00B7 Sent by INAVA Assist (AI). The summary is AI-generated; check with ' + firstName + ' before acting._');
   const text = lines.join('\n');
 
   const recipients = [ticket.assigneeEmail];
@@ -231,12 +247,27 @@ function notifyAssignee_(ticket, heading, followUp) {
   for (let i = 0; i < recipients.length; i++) {
     if (!recipients[i]) continue;
     try {
-      if (sendPrivateMessage_(recipients[i], recipients[i] === ticket.assigneeEmail ? text : '*(Backup for ' + (ticket.assigneeName || ticket.assigneeEmail) + ')*\n' + text)) return true;
+      if (sendPrivateMessage_(recipients[i], recipients[i] === ticket.assigneeEmail ? text : '(Backup for ' + (ticket.assigneeName || ticket.assigneeEmail) + ')\n\n' + text)) return true;
     } catch (e) {
       console.error('Notification to ' + recipients[i] + ' failed: ' + e);
     }
   }
   return false;
+}
+
+/** When the assignee and backup can't be reached, tell Operations straight away (no payroll details). */
+function alertOperations_(ticket, user) {
+  const ops = getRouting_('OPERATIONS');
+  if (!ops || !ops.email || ops.email === ticket.assigneeEmail) return;
+  try {
+    sendPrivateMessage_(ops.email, 'I couldn\'t reach ' + (ticket.assigneeName || ticket.assigneeEmail || 'the assigned person') +
+      ' about something ' + user.name + ' needs help with (' + (CATEGORIES[ticket.category] || ticket.category) + ').' +
+      (ticket.category === 'PAYROLL' ? ' It is a confidential payroll matter.' : '\n\n- What it\'s about: ' + ticket.summary) +
+      '\n\nPlease make sure someone follows up with ' + user.name + '.\n\n_Ref ' + ticket.id + ' \u00B7 Sent by INAVA Assist (AI)._');
+    appendHistory_(ticket, 'Assignee unreachable; Operations (' + ops.email + ') alerted');
+  } catch (e) {
+    console.error('Operations alert for ' + ticket.id + ' failed: ' + e);
+  }
 }
 
 function formatTime_(date) {
@@ -267,13 +298,13 @@ function updateTicketStatus_(user, ticketId, statusWords, note) {
 
   if (status === 'Resolved' && ticket.source === 'Direct message') {
     try {
-      sendPrivateMessage_(ticket.requesterEmail, 'Update from INAVA: your concern (' + ticket.id +
-        ') has been marked resolved by the team. If anything is still not right, just reply here.');
+      sendPrivateMessage_(ticket.requesterEmail, 'Quick update: ' + (ticket.assigneeName || 'the team').replace(/\s*\(.*\)\s*/g, ' ').trim() +
+        ' has marked what you raised with me as sorted. If anything is still not right, just tell me.');
     } catch (e) {
       console.warn('Could not tell requester about resolution: ' + e);
     }
   }
-  return 'Ticket ' + ticket.id + ' is now *' + status + '*.';
+  return status === 'Resolved' ? 'Thanks! ' + ticket.id + ' is marked as done.' : ticket.id + ' is now ' + status + '.';
 }
 
 function matchStatus_(words) {
@@ -289,7 +320,7 @@ function describeMyTickets_(user) {
   const raised = all.filter(function (t) { return t.requesterEmail === user.email; });
   const lines = [];
   if (assigned.length) {
-    lines.push('*Assigned to you:*');
+    lines.push('Passed to you and still open:');
     assigned.forEach(function (t) {
       const overdue = t.dueBy && t.dueBy.getTime() < Date.now() ? ' - OVERDUE' : '';
       lines.push('- ' + t.id + ' | ' + t.status + ' | ' + t.priority + overdue + ' | ' +
@@ -298,10 +329,13 @@ function describeMyTickets_(user) {
   }
   if (raised.length) {
     if (lines.length) lines.push('');
-    lines.push('*Concerns you raised:*');
-    raised.forEach(function (t) { lines.push('- ' + t.id + ' | ' + t.status); });
+    lines.push('Things I\'ve passed on for you:');
+    raised.forEach(function (t) {
+      lines.push('- ' + formatTime_(t.created) + ': with ' + (t.assigneeName || 'the team').replace(/\s*\(.*\)\s*/g, ' ').trim() +
+        ' (' + t.status.toLowerCase() + ')');
+    });
   }
-  return lines.length ? lines.join('\n') : 'You have no open tickets.';
+  return lines.length ? lines.join('\n') : 'Nothing open right now.';
 }
 
 function describeTicket_(user, ticketId) {
@@ -313,7 +347,7 @@ function describeTicket_(user, ticketId) {
       '- From: ' + t.requesterName, '- Summary: ' + t.summary, '', 'History:', '']
       .concat(t.history.split('\n').map(function (h) { return '- ' + h; })).join('\n');
   }
-  if (t.requesterEmail === user.email) return 'Your concern ' + t.id + ' is currently: *' + t.status + '*.';
+  if (t.requesterEmail === user.email) return 'That one is currently ' + t.status.toLowerCase() + '.';
   return 'I could not find ticket ' + ticketId + '.';
 }
 

@@ -30,7 +30,8 @@ list are kept in one Google Sheet that you control.
 | Private notifications | The assignee gets a direct message with the ticket number, category, priority, a summary, a link to the conversation, the recommended action and a respond-by time. |
 | Payroll stays confidential | Payroll summaries have amounts and account numbers removed automatically. Payroll details only go to someone marked **Payroll Cleared = YES**. In a shared space, the bot asks people to DM it about pay. |
 | No duplicate tickets | If the same person raises the same open concern again, it's added to their existing ticket as a follow-up. |
-| Ticket statuses | New, Assigned, In Progress, Awaiting Response, Resolved. Update them by DM (`status INAVA-261027-001 resolved`) or in the sheet. |
+| Feels like a person | VAs never see ticket numbers or forms. The bot says things like "I've passed this to Cyn, who will get back to you." If it isn't sure of an answer, it asks the right person instead of guessing. |
+| Behind-the-scenes tracking | Each concern is quietly tracked in the sheet (New, Assigned, In Progress, Awaiting Response, Resolved), so reminders and duplicate checks work. Team members reply `done INAVA-…` in their chat with the bot when it's handled. |
 | Overdue reminders | An hourly job reminds the assignee about overdue tickets. If a ticket stays overdue, it tells Operations (Mabelle). |
 | Verified identity | Google tells the bot who sent each message, and senders can't fake this. Anyone not listed as Active in the Users tab gets no AI answers. |
 | Clearly an AI | Every reply ends with "INAVA Assist · AI assistant". It never speaks as Mabelle, Cyn, Verge or Boss Britt. |
@@ -185,11 +186,11 @@ Add the bot: open the space name, then **Apps & integrations > Add apps > INAVA 
 | 4 | `@INAVA Assist what is our leave policy?` | Answer from your test doc, ending with _Source: TEST - Leave Policy_ |
 | 5 | Ask something your docs don't cover, such as "What is the overtime rate?" | It says it has no approved answer and offers to pass it on. It doesn't make anything up. |
 | 6 | Set the space's Audience to **VA**. Ask about a document whose Access is `HR, MANAGEMENT` | It doesn't use that document, because VAs can read the answer |
-| 7 | `@INAVA Assist my client is upset I missed today's meeting` | A reply with a reference number (INAVA-…). A new row in Tickets. **You get a private DM** with the summary and a link. |
+| 7 | `@INAVA Assist my client is upset I missed today's meeting` | A friendly reply naming who it passed it to (no ticket numbers). A new row in Tickets. **You get a private DM** with the summary and a link. |
 | 8 | Say the same thing again | "I've added this to your open concern…", and no new ticket |
 | 9 | In your DM with the bot: `I wasn't paid $500 this cycle` | A Payroll ticket. The summary shows **[amount removed]**. The DM goes only to the Payroll contact. |
-| 10 | In your DM: `my tickets`, then `status INAVA-…-001 in progress checking` | A list of tickets, then a confirmation. The Tickets tab and History update. |
-| 11 | In the space: `@INAVA Assist status INAVA-…-001 resolved` | It refuses and asks you to use a DM |
+| 10 | In your DM: `my tickets`, then `done INAVA-…-001 spoke to the client` (copy the ref from the notification) | A list, then "marked as done". The Tickets tab and History update. |
+| 11 | In the space: `@INAVA Assist done INAVA-…-001` | It asks you to send it in a direct message instead |
 | 12 | In the Tickets tab, set a ticket's **Due By** to yesterday, then run **checkOverdueTickets** in the editor | You get an overdue reminder by DM |
 | 13 | Remove yourself from Users (or set Active = NO) and message the bot | "I don't have you on INAVA's approved list" |
 | 14 | `Are you a real person?` | It says clearly that it's an AI |
@@ -227,7 +228,8 @@ Do these **only when you decide to go live**. I won't do any of them without you
 - **Approve a new space:** the bot adds it to the Spaces tab automatically. Set Approved = YES,
   then choose the **Audience**: **VA** if any VA is in the space, otherwise HR or MANAGEMENT. For a
   VA team space dedicated to one client, also fill in the **Client Account**.
-- **Work a ticket:** DM the bot `status <ticket> <new status> <optional note>`, or edit the
+- **Handle a concern:** reach out to the person, then DM the bot `done <ref> <optional note>`
+  (or `status <ref> in progress` / `awaiting response`), or edit the
   Tickets tab. `Awaiting Response` pauses reminders.
 
 ## Settings you can change (Script Properties, all optional)

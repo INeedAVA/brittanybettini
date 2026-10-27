@@ -222,7 +222,8 @@ test('client care concern opens a ticket and privately notifies Cyn', () => {
     category: 'CLIENT_CARE', priority: 'HIGH', concern_summary: 'Client unhappy with VA response times.',
     recommended_action: 'Call the client today.' }));
   const r = env.ctx.onMessage(spaceEvent('va2@inava.test', 'users/7', 'spaces/acme', 'My client is unhappy with response times'));
-  assert.match(r.text, /Reference: \*INAVA-\d{6}-001\*/);
+  assert.doesNotMatch(r.text, /INAVA-|ticket/i, 'the VA never sees ticket jargon');
+  assert.match(env.sent.claude[0].body.messages.slice(-1)[0].content, /Team members: CLIENT_CARE: Cyn; OPERATIONS: Mabelle/);
   const t = ticketRows(env)[0];
   assert.strictEqual(t.Status, 'Assigned');
   assert.strictEqual(t['Assignee Email'], 'cyn@inava.test');
@@ -240,7 +241,7 @@ test('repeat of the same concern is a follow-up, not a duplicate ticket', () => 
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I need Dec 24 off'));
   const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Any update on my leave?'));
   assert.strictEqual(ticketRows(env).length, 1);
-  assert.match(r.text, /\(added to your open concern\)/);
+  assert.doesNotMatch(r.text, /INAVA-/);
   assert.match(ticketRows(env)[0].History, /Follow-up/);
   // Claude is told about the open ticket the second time.
   assert.match(env.sent.claude[1].body.messages.slice(-1)[0].content, /INAVA-\d{6}-001 \(RECRUITMENT_HR, Assigned\)/);
@@ -253,7 +254,7 @@ test('Claude can mark a same-category concern as a separate ticket with NEW', ()
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'Client B unhappy.', duplicate_of_ticket: 'NEW' }));
   const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Different client, B, is also unhappy'));
   assert.strictEqual(ticketRows(env).length, 2);
-  assert.match(r.text, /Reference: \*INAVA-\d{6}-002\* \(passed privately/);
+  assert.doesNotMatch(r.text, /INAVA-/);
 });
 
 test('payroll: figures are stripped and only the cleared payroll contact gets details', () => {
@@ -265,7 +266,7 @@ test('payroll: figures are stripped and only the cleared payroll contact gets de
   assert.doesNotMatch(t.Summary, /1,250|1234/);
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
   assert.ok(dm);
-  assert.match(dm.body.text, /Summary:/);
+  assert.match(dm.body.text, /What it's about: Missing pay/);
   assert.ok(!env.sent.chat.some((c) => /dm-mabelle|dm-cyn|dm-verge/.test(c.url)));
 });
 
@@ -276,18 +277,21 @@ test('payroll routed to someone not cleared: details withheld', () => {
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', concern_summary: 'Deduction question.' }));
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Why the deduction?'));
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
-  assert.match(dm.body.text, /Details: withheld/);
+  assert.match(dm.body.text, /Details are withheld here/);
   assert.doesNotMatch(dm.body.text, /Deduction question/);
 });
 
-test('assignee without a DM space: ticket stays New and the reply says logged', () => {
+test('assignee without a DM space: ticket stays New and Operations is alerted', () => {
   const env = setupEnv();
   const cyn = env.sheet('Users').find((u) => u[0] === 'cyn@inava.test');
   cyn[5] = ''; cyn[6] = '';
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'x' }));
   const r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'problem'));
   assert.strictEqual(ticketRows(env)[0].Status, 'New');
-  assert.match(r.text, /logged for the INAVA team/);
+  assert.doesNotMatch(r.text, /INAVA-/);
+  const alert = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-mabelle/messages') >= 0);
+  assert.ok(alert, 'Operations is told straight away');
+  assert.match(alert.body.text, /couldn't reach Cyn/);
 });
 
 test('ticket commands: assignee can update, others cannot, and never in a space', () => {
@@ -302,16 +306,20 @@ test('ticket commands: assignee can update, others cannot, and never in a space'
   r = env.ctx.onMessage(spaceEvent('cyn@inava.test', 'users/2', 'spaces/team', 'status ' + id + ' resolved'));
   assert.match(r.text, /direct message/);
   r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'status ' + id + ' in progress called them'));
-  assert.match(r.text, /now \*In Progress\*/);
+  assert.match(r.text, /now In Progress/);
   assert.match(ticketRows(env)[0].History, /In Progress by Cyn: called them/);
   r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'my tickets'));
   assert.match(r.text, new RegExp(id));
   r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'ticket ' + id));
-  assert.match(r.text, /currently: \*In Progress\*/);
-  r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'status ' + id + ' resolved'));
+  assert.match(r.text, /currently in progress/);
+  r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'my tickets'));
+  assert.match(r.text, /with Cyn \(in progress\)/);
+  assert.doesNotMatch(r.text, /INAVA-/);
+  r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'done ' + id + ' spoke to the client'));
+  assert.match(r.text, /marked as done/);
   assert.strictEqual(ticketRows(env)[0].Status, 'Resolved');
   // Requester raised it by DM, so they are told it is resolved.
-  assert.ok(env.sent.chat.some((c) => c.url.indexOf('spaces/dm-u7/messages') >= 0 && /resolved/.test(c.body.text)));
+  assert.ok(env.sent.chat.some((c) => c.url.indexOf('spaces/dm-u7/messages') >= 0 && /Cyn has marked what you raised with me as sorted/.test(c.body.text)));
   assert.strictEqual(env.sent.claude.length, before, 'commands never call Claude');
 });
 

@@ -61,27 +61,24 @@ function onRemovedFromSpace(event) {
 const AI_FOOTER = '\n\n_INAVA Assist · AI assistant_';
 
 const WELCOME_TEXT = [
-  'Hi, I\'m *INAVA Assist*, the AI assistant for I Need A VA. I\'m not a person.',
+  'Hi! I\'m INAVA Assist, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
   '',
-  '- Ask me about INAVA policies, procedures and FAQs. I answer from approved INAVA documents and tell you which one I used.',
-  '- Tell me about a concern and I\'ll pass it privately to the right INAVA team member, who will follow up.',
-  '- In a shared space, @mention me. Please keep anything personal, especially about pay, to a direct message with me.',
-  '',
-  'Type *help* for commands.',
+  '- Ask me anything about how things work at INAVA: policies, procedures, leave, schedules. I\'ll tell you which document my answer comes from.',
+  '- If something\'s wrong or you need a person, just tell me. I\'ll pass it privately to the right person on the team and they\'ll get back to you.',
+  '- If I\'m not sure about something, I\'ll ask the right person for you instead of guessing.',
+  '- In a group space, @mention me. Please keep anything personal, especially about pay, to a direct message with me.',
 ].join('\n');
 
 const NOT_REGISTERED_TEXT = '\n\nI don\'t have you on INAVA\'s approved list yet, so I can\'t answer questions for you. ' +
   'Please ask the INAVA team to add you.';
 
 const HELP_TEXT = [
-  '*INAVA Assist commands*',
-  '- *help*: this list',
-  '- *whoami*: what access I have for you',
-  '- *my tickets*: your open tickets',
-  '- *ticket INAVA-261027-001*: details of one ticket',
-  '- *status INAVA-261027-001 in progress* (or assigned, awaiting response, resolved), optionally followed by a note',
+  'Just message me the way you would message a colleague: ask a question, or tell me what you need help with.',
   '',
-  'Anything else is answered by the AI. Ticket commands work in direct messages only.',
+  'For the INAVA team (in a direct message with me):',
+  '- my tickets: the concerns passed to you',
+  '- done INAVA-261027-001 (optional note): mark one as handled',
+  '- status INAVA-261027-001 in progress (or awaiting response): update one',
 ].join('\n');
 
 /** Does the work for one message and returns the reply text. */
@@ -119,10 +116,11 @@ function handleMessage_(ev) {
 
   const decision = askClaude_({
     text: text, user: user, ctx: ctx, knowledge: knowledge, openTickets: openTickets, history: history,
+    team: teamNames_(),
   });
   if (decision.refused) {
     audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'REFUSED' });
-    return 'I can\'t help with that one. If it\'s something the INAVA team should look at, say "please pass this to a person" and I\'ll do that.' + AI_FOOTER;
+    return 'Sorry, I can\'t help with that one. If it\'s something the INAVA team should look at, just say "please pass this to someone" and I\'ll let the right person know.' + AI_FOOTER;
   }
 
   let reply = String(decision.reply || '').trim();
@@ -142,13 +140,8 @@ function handleMessage_(ev) {
       isDm: ev.isDm,
       link: ev.isDm ? '' : conversationLink_(ev),
     });
+    // Tracked quietly: the person never sees ticket numbers.
     ticketId = result.ticketId;
-    if (result.isNew) {
-      reply += '\n\nReference: *' + result.ticketId + '*' +
-        (result.notified ? ' (passed privately to the right INAVA team member)' : ' (logged for the INAVA team)');
-    } else {
-      reply += '\n\nReference: *' + result.ticketId + '* (added to your open concern)';
-    }
   }
 
   saveHistory_(user.email, ev.space.name, history, text, reply);
@@ -169,10 +162,12 @@ function runCommand_(text, user, isDm) {
   const myTickets = /^my tickets$/i.test(t);
   const view = t.match(/^ticket\s+(INAVA-\d{6}-\d+)\s*$/i);
   const status = t.match(/^status\s+(INAVA-\d{6}-\d+)\s+(new|assigned|in[ _-]?progress|awaiting[ _-]response|resolved)\b[\s:,.-]*([\s\S]*)$/i);
-  if (!myTickets && !view && !status) return null;
-  if (!isDm) return 'Please manage tickets in a direct message with me, so details stay private.';
+  const done = t.match(/^done\s+(INAVA-\d{6}-\d+)\b[\s:,.-]*([\s\S]*)$/i);
+  if (!myTickets && !view && !status && !done) return null;
+  if (!isDm) return 'Let\'s keep that private: send it to me in a direct message.';
   if (myTickets) return describeMyTickets_(user);
   if (view) return describeTicket_(user, view[1]);
+  if (done) return updateTicketStatus_(user, done[1], 'resolved', done[2].trim());
   const words = status[2].replace(/inprogress/i, 'in progress');
   return updateTicketStatus_(user, status[1], words, status[3].trim());
 }
