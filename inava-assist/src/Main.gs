@@ -142,6 +142,7 @@ function handleMessage_(ev) {
       spaceName: ev.space.displayName,
       isDm: ev.isDm,
       link: ev.isDm ? '' : conversationLink_(ev),
+      message: text,
     });
     // Tracked quietly: the person never sees ticket numbers.
     ticketId = result.ticketId;

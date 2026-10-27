@@ -72,10 +72,10 @@ function setup() {
   }
   if (readTable_(SHEETS.ROUTING).length === 0) {
     [
-      ['CLIENT_CARE', 'Cyn', 'cyn@REPLACE-ME.com', '', 'NO'],
+      ['CLIENT_CARE', 'Ms. Cynthia', 'cynthia@REPLACE-ME.com', '', 'NO'],
       ['OPERATIONS', 'Mabelle', 'mabelle@REPLACE-ME.com', '', 'NO'],
-      ['RECRUITMENT_HR', 'Verge', 'verge@REPLACE-ME.com', '', 'NO'],
-      ['PAYROLL', 'Payroll contact', 'payroll@REPLACE-ME.com', '', 'YES'],
+      ['RECRUITMENT_HR', 'Ms. Vergelyn', 'vergelyn@REPLACE-ME.com', '', 'NO'],
+      ['PAYROLL', '', 'payroll@REPLACE-ME.com', '', 'YES'],
     ].forEach(function (r) {
       appendObject_(SHEETS.ROUTING, {
         'Category': r[0], 'Assignee Name': r[1], 'Assignee Email': r[2], 'Backup Email': r[3], 'Payroll Cleared': r[4],

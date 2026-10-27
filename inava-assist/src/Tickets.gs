@@ -13,16 +13,28 @@ const REMINDER_EVERY_HOURS = { URGENT: 1, HIGH: 4, NORMAL: 8, LOW: 24 };
 // After this many reminders, the Operations contact is told as well.
 const ESCALATE_AFTER_REMINDERS = 2;
 
-/** First names of the team member for each category, for the AI to mention ("I've passed this to Cyn"). */
+/** How the AI names the team member for each category ("Ms. Cynthia from our Client Care team"). */
 function teamNames_() {
   const names = {};
   Object.keys(CATEGORIES).forEach(function (cat) {
     const r = getRouting_(cat);
-    // Drop notes in brackets, e.g. "Cyn (TEST: goes to smm)" -> "Cyn".
-    const name = r ? r.name.replace(/\s*\(.*\)\s*/g, ' ').trim() : '';
-    if (name) names[cat] = name;
+    const name = r ? displayName_(r.name) : '';
+    names[cat] = (name ? name + ' from ' : '') + 'our ' + TEAM_LABEL[cat] + ' team';
   });
   return names;
+}
+
+// How each team is described to VAs ("Ms. Cynthia from our Client Care team").
+const TEAM_LABEL = {
+  CLIENT_CARE: 'Client Care',
+  OPERATIONS: 'Operations',
+  RECRUITMENT_HR: 'HR',
+  PAYROLL: 'Payroll',
+};
+
+/** Drops notes in brackets: "Ms. Cynthia (TEST: goes to smm)" -> "Ms. Cynthia". */
+function displayName_(name) {
+  return String(name || '').replace(/\s*\(.*\)\s*/g, ' ').trim();
 }
 
 function getRouting_(category) {
@@ -131,13 +143,15 @@ function handleEscalation_(decision, user, source) {
   try {
     const category = decision.category;
     const priority = PRIORITIES.indexOf(decision.priority) >= 0 ? decision.priority : 'NORMAL';
-    let summary = String(decision.concern_summary || '').trim() || 'See source conversation.';
-    if (category === 'PAYROLL') summary = redactSensitive_(summary);
+    // The team sees the sender's own words. The sheet keeps payroll messages with figures removed.
+    const original = String(source.message || '').trim().slice(0, 2000) ||
+      String(decision.concern_summary || '').trim() || 'See source conversation.';
+    const summary = category === 'PAYROLL' ? redactSensitive_(original) : original;
 
     const existing = findDuplicate_(decision, user, category);
     if (existing) {
       appendHistory_(existing, 'Follow-up from ' + user.name + ': ' + summary);
-      const notified = notifyAssignee_(existing, summary);
+      const notified = notifyAssignee_(existing, original, true);
       audit_({ email: user.email, role: user.role, space: source.spaceId, action: 'TICKET_FOLLOW_UP', ticketId: existing.id });
       return { ticketId: existing.id, isNew: false, notified: notified };
     }
@@ -181,7 +195,7 @@ function handleEscalation_(decision, user, source) {
     });
     ticket.history = historyLine_('Created from a message by ' + user.name);
 
-    const notified = notifyAssignee_(ticket, null);
+    const notified = notifyAssignee_(ticket, original, false);
     if (notified) {
       updateObject_(SHEETS.TICKETS, ticket.row, { 'Status': 'Assigned' });
       appendHistory_(ticket, 'Assigned to ' + (ticket.assigneeName || ticket.assigneeEmail) + ' (private notification sent)');
@@ -218,7 +232,7 @@ function concernLines_(ticket, concern) {
     'Priority: ' + p.charAt(0) + p.slice(1).toLowerCase()].join('\n\n');
 }
 
-/** "Cyn (TEST: goes to smm)" -> "Cyn"; "Vicky Santos" -> "Vicky". */
+/** "Vicky Santos" -> "Vicky". */
 function firstName_(name) {
   return String(name || '').replace(/\s*\(.*\)\s*/g, ' ').trim().split(' ')[0];
 }
@@ -226,17 +240,18 @@ function firstName_(name) {
 /**
  * Sends a short private message to the assignee (or their backup).
  * Payroll details only go to someone marked Payroll Cleared = YES.
- * @param {string|null} followUp summary of a follow-up message, or null for a new concern
+ * @param {string} message the sender's own words
+ * @param {boolean} isFollowUp true for a further message about an open concern
  */
-function notifyAssignee_(ticket, followUp) {
+function notifyAssignee_(ticket, message, isFollowUp) {
   const routing = getRouting_(ticket.category);
   const cleared = ticket.category !== 'PAYROLL' || (routing && routing.payrollCleared &&
     (ticket.assigneeEmail === routing.email || ticket.assigneeEmail === routing.backupEmail));
-  const details = cleared ? (followUp || ticket.summary)
+  const details = cleared ? message
     : 'Payroll matter (details are private, please contact ' + firstName_(ticket.requesterName) + ' directly)';
 
   // Blank lines between lines: Google Chat may join single line breaks.
-  const parts = [followUp ? 'Update on a concern' : 'New concern'];
+  const parts = [isFollowUp ? 'Update on a concern' : 'New concern'];
   parts.push(concernLines_(ticket, details));
   if (ticket.sourceLink) parts.push('Conversation: ' + ticket.sourceLink);
   parts.push('When it\'s sorted, reply: done ' + ticket.id);
@@ -248,7 +263,7 @@ function notifyAssignee_(ticket, followUp) {
     if (!recipients[i]) continue;
     try {
       if (sendPrivateMessage_(recipients[i], recipients[i] === ticket.assigneeEmail ? text
-        : '(Covering for ' + (firstName_(ticket.assigneeName) || ticket.assigneeEmail) + ')\n\n' + text)) return true;
+        : '(Covering for ' + (displayName_(ticket.assigneeName) || ticket.assigneeEmail) + ')\n\n' + text)) return true;
     } catch (e) {
       console.error('Notification to ' + recipients[i] + ' failed: ' + e);
     }
@@ -261,7 +276,7 @@ function alertOperations_(ticket, user) {
   const ops = getRouting_('OPERATIONS');
   if (!ops || !ops.email || ops.email === ticket.assigneeEmail) return;
   try {
-    sendPrivateMessage_(ops.email, ['New concern (I couldn\'t reach ' + (firstName_(ticket.assigneeName) || 'the right person') + ')',
+    sendPrivateMessage_(ops.email, ['New concern (I couldn\'t reach ' + (displayName_(ticket.assigneeName) || 'the right person') + ')',
       concernLines_(ticket, ticket.category === 'PAYROLL' ? 'Payroll matter (details are private)' : ticket.summary),
       'When it\'s sorted, reply: done ' + ticket.id].join('\n\n'));
     appendHistory_(ticket, 'Assignee unreachable; Operations (' + ops.email + ') alerted');
@@ -382,7 +397,7 @@ function checkOverdueTickets() {
     // Tell Operations once: after repeated reminders, or straight away if the assignee can't be reached.
     if ((reminders === ESCALATE_AFTER_REMINDERS || (!sent && reminders === 1)) && ops && ops.email && ops.email !== t.assigneeEmail) {
       try {
-        sendPrivateMessage_(ops.email, ['Heads up: this is ' + hoursLate + 'h overdue with ' + (firstName_(t.assigneeName) || 'nobody yet'),
+        sendPrivateMessage_(ops.email, ['Heads up: this is ' + hoursLate + 'h overdue with ' + (displayName_(t.assigneeName) || 'nobody yet'),
           concernLines_(t, t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary)].join('\n\n'));
         appendHistory_(t, 'Escalated to Operations (' + ops.email + ')');
       } catch (e) {
