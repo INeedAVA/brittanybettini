@@ -1083,21 +1083,22 @@ function notifyAssignee_(ticket, heading, followUp) {
   const cleared = ticket.category !== 'PAYROLL' || (routing && routing.payrollCleared &&
     (ticket.assigneeEmail === routing.email || ticket.assigneeEmail === routing.backupEmail));
 
-  const lines = ['*' + heading + '*  (' + (CATEGORIES[ticket.category] || ticket.category) + ')'];
-  lines.push('Priority: ' + ticket.priority + '   |   Respond by: ' + formatTime_(ticket.dueBy));
-  lines.push('From: ' + ticket.requesterName + ' <' + ticket.requesterEmail + '>');
-  lines.push('Where: ' + ticket.source + (ticket.sourceLink ? ' - ' + ticket.sourceLink : ''));
+  // Google Chat may join single line breaks, so details go in a bullet list
+  // and paragraphs are separated by blank lines.
+  const lines = [heading + ' (' + (CATEGORIES[ticket.category] || ticket.category) + ')', ''];
+  lines.push('- Priority: ' + ticket.priority);
+  lines.push('- Respond by: ' + formatTime_(ticket.dueBy));
+  lines.push('- From: ' + ticket.requesterName + ' <' + ticket.requesterEmail + '>');
+  lines.push('- Where: ' + ticket.source + (ticket.sourceLink ? ' - ' + ticket.sourceLink : ''));
   if (cleared) {
-    lines.push('');
-    lines.push('*Summary:* ' + (followUp || ticket.summary));
-    if (!followUp && ticket.recommendedAction) lines.push('*Recommended action:* ' + ticket.recommendedAction);
+    lines.push('- Summary: ' + (followUp || ticket.summary));
+    if (!followUp && ticket.recommendedAction) lines.push('- Recommended action: ' + ticket.recommendedAction);
   } else {
-    lines.push('');
-    lines.push('This is a confidential payroll matter. Details are withheld from this notification; ' +
-      'please hand it to the authorised payroll contact.');
+    lines.push('- Details: withheld. This is a confidential payroll matter; please hand it to the authorised payroll contact.');
   }
   lines.push('');
-  lines.push('Update it here with:  `status ' + ticket.id + ' in progress`  (or assigned, awaiting response, resolved). Add a note after the status if you like.');
+  lines.push('To update it, reply here with:  `status ' + ticket.id + ' in progress`  (or assigned, awaiting response, resolved). You can add a note after the status.');
+  lines.push('');
   lines.push('_Sent by INAVA Assist (AI). Summaries are AI-generated; check the source conversation before acting._');
   const text = lines.join('\n');
 
@@ -1183,9 +1184,10 @@ function describeTicket_(user, ticketId) {
   const t = findTicket_(ticketId);
   if (!t) return 'I could not find ticket ' + ticketId + '.';
   if (canManageTicket_(user, t)) {
-    return ['*' + t.id + '* - ' + t.status, 'Category: ' + (CATEGORIES[t.category] || t.category) + ' | Priority: ' + t.priority,
-      'Assigned to: ' + (t.assigneeName || t.assigneeEmail || 'unassigned') + ' | Respond by: ' + formatTime_(t.dueBy),
-      'From: ' + t.requesterName, 'Summary: ' + t.summary, '', 'History:', t.history].join('\n');
+    return [t.id + ' - ' + t.status, '', '- Category: ' + (CATEGORIES[t.category] || t.category), '- Priority: ' + t.priority,
+      '- Assigned to: ' + (t.assigneeName || t.assigneeEmail || 'unassigned'), '- Respond by: ' + formatTime_(t.dueBy),
+      '- From: ' + t.requesterName, '- Summary: ' + t.summary, '', 'History:', '']
+      .concat(t.history.split('\n').map(function (h) { return '- ' + h; })).join('\n');
   }
   if (t.requesterEmail === user.email) return 'Your concern ' + t.id + ' is currently: *' + t.status + '*.';
   return 'I could not find ticket ' + ticketId + '.';
@@ -1206,9 +1208,9 @@ function checkOverdueTickets() {
     if (t.lastReminder && now - t.lastReminder.getTime() < every) return;
 
     const hoursLate = Math.round((now - t.dueBy.getTime()) / 3600000);
-    const text = '*Reminder: ' + t.id + ' is overdue* (' + t.priority + ', ' + t.status + ', ' + hoursLate + 'h past target).\n' +
+    const text = 'Reminder: ' + t.id + ' is overdue (' + t.priority + ', ' + t.status + ', ' + hoursLate + 'h past target).\n\n' +
       (t.category === 'PAYROLL' ? 'Confidential payroll matter.' : 'Summary: ' + t.summary) +
-      '\nReply `status ' + t.id + ' resolved` when done, or `status ' + t.id + ' awaiting response` to pause reminders.';
+      '\n\nReply `status ' + t.id + ' resolved` when done, or `status ' + t.id + ' awaiting response` to pause reminders.';
     let sent = false;
     try {
       sent = t.assigneeEmail ? sendPrivateMessage_(t.assigneeEmail, text) : false;
@@ -1222,10 +1224,10 @@ function checkOverdueTickets() {
     // Tell Operations once: after repeated reminders, or straight away if the assignee can't be reached.
     if ((reminders === ESCALATE_AFTER_REMINDERS || (!sent && reminders === 1)) && ops && ops.email && ops.email !== t.assigneeEmail) {
       try {
-        sendPrivateMessage_(ops.email, '*Escalation: ' + t.id + ' is still overdue* (' + t.priority + ').\n' +
+        sendPrivateMessage_(ops.email, 'Escalation: ' + t.id + ' is still overdue (' + t.priority + ').\n\n' +
           'Assigned to ' + (t.assigneeName || t.assigneeEmail || 'nobody') + '. Category: ' +
           (CATEGORIES[t.category] || t.category) + '.' +
-          (t.category === 'PAYROLL' ? ' Details withheld (payroll).' : '\nSummary: ' + t.summary));
+          (t.category === 'PAYROLL' ? ' Details withheld (payroll).' : '\n\nSummary: ' + t.summary));
         appendHistory_(t, 'Escalated to Operations (' + ops.email + ')');
       } catch (e) {
         console.error('Escalation for ' + t.id + ' failed: ' + e);

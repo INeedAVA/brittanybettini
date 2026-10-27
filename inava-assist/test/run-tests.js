@@ -259,7 +259,7 @@ test('payroll routed to someone not cleared: details withheld', () => {
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', concern_summary: 'Deduction question.' }));
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Why the deduction?'));
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
-  assert.match(dm.body.text, /Details are withheld/);
+  assert.match(dm.body.text, /Details: withheld/);
   assert.doesNotMatch(dm.body.text, /Deduction question/);
 });
 
