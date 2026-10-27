@@ -240,6 +240,8 @@ Do these **only when you decide to go live**. I won't do any of them without you
 | `CLAUDE_EFFORT` | `low` | `low` is fastest. `medium` gives more thorough answers but may need the slow-reply path more often. |
 | `CLAUDE_FALLBACKS` | `default` | `off` disables the automatic retry on another model when a request is declined |
 | `DEDUP_HOURS` | `24` | How long a new message in the same category counts as a follow-up |
+| `SHOW_SOURCES` | `off` | `on` adds "Source: <document>" under answers. Sources are always recorded in the Audit Log. |
+| `SHOW_AI_LABEL` | `off` | `on` adds "INAVA Assist · AI assistant" under every reply. Chat already shows an "App" label, and the welcome message says it's an AI. |
 
 ## Security notes and recommendations
 

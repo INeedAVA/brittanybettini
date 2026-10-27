@@ -31,6 +31,10 @@ const DEFAULTS = {
   // A new concern from the same person in the same category within this many
   // hours is treated as a follow-up to their open ticket, not a new ticket.
   DEDUP_HOURS: '24',
+  // Show "Source: <document>" under answers ('on' / 'off').
+  SHOW_SOURCES: 'off',
+  // Show "INAVA Assist · AI assistant" under every reply ('on' / 'off').
+  SHOW_AI_LABEL: 'off',
 };
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -96,6 +100,10 @@ function getProp_(key) {
   const value = PropertiesService.getScriptProperties().getProperty(key);
   if (value !== null && value !== '') return value;
   return DEFAULTS.hasOwnProperty(key) ? DEFAULTS[key] : null;
+}
+
+function isOn_(key) {
+  return String(getProp_(key)).trim().toLowerCase() === 'on';
 }
 
 function setProp_(key, value) {
@@ -1308,7 +1316,7 @@ function onMessage(event) {
     console.error('onMessage failed: ' + (e && e.stack ? e.stack : e));
     audit_({ email: ev.user.email, space: ev.space.name, action: 'ERROR', detail: String(e) });
     text = 'Sorry, something went wrong on my side and I could not answer. Please try again in a moment, ' +
-      'or contact the INAVA team directly if it is urgent.' + AI_FOOTER;
+      'or contact the INAVA team directly if it is urgent.' + aiFooter_();
   }
   return deliver_(ev, text, started);
 }
@@ -1340,7 +1348,9 @@ function onRemovedFromSpace(event) {
   return {};
 }
 
-const AI_FOOTER = '\n\n_INAVA Assist · AI assistant_';
+// Optional label under every reply. Off by default: Chat already marks the bot as an "App",
+// and the welcome message says it is an AI. Set Script Property SHOW_AI_LABEL = on to show it.
+const AI_FOOTER_TEXT = '\n\n_INAVA Assist \u00B7 AI assistant_';
 
 const WELCOME_TEXT = [
   'Hi! I\'m INAVA Assist, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
@@ -1402,7 +1412,7 @@ function handleMessage_(ev) {
   });
   if (decision.refused) {
     audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'REFUSED' });
-    return 'Sorry, I can\'t help with that one. If it\'s something the INAVA team should look at, just say "please pass this to someone" and I\'ll let the right person know.' + AI_FOOTER;
+    return 'Sorry, I can\'t help with that one. If it\'s something the INAVA team should look at, just say "please pass this to someone" and I\'ll let the right person know.' + aiFooter_();
   }
 
   let reply = String(decision.reply || '').trim();
@@ -1412,7 +1422,8 @@ function handleMessage_(ev) {
   const cited = (decision.sources || []).filter(function (s, i, arr) {
     return titles.indexOf(s) >= 0 && arr.indexOf(s) === i;
   });
-  if (cited.length) reply += '\n\n_Source: ' + cited.join('; ') + '_';
+  // Sources are always recorded in the Audit Log; shown in Chat only if SHOW_SOURCES = on.
+  if (cited.length && isOn_('SHOW_SOURCES')) reply += '\n\n_Source: ' + cited.join('; ') + '_';
 
   let ticketId = '';
   if (decision.escalate && CATEGORIES.hasOwnProperty(decision.category)) {
@@ -1428,8 +1439,9 @@ function handleMessage_(ev) {
 
   saveHistory_(user.email, ev.space.name, history, text, reply);
   audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED', ticketId: ticketId,
-    detail: decision.escalate ? decision.category + ' / ' + decision.priority : 'no escalation' });
-  return reply + AI_FOOTER;
+    detail: (decision.escalate ? decision.category + ' / ' + decision.priority : 'no escalation') +
+      (cited.length ? ' | sources: ' + cited.join('; ') : '') });
+  return reply + aiFooter_();
 }
 
 /** Returns reply text for a command, or null if the text is not a command. */
@@ -1521,6 +1533,10 @@ function normalizeEvent_(e) {
     space: space,
     isDm: space.type === 'DM' || space.spaceType === 'DIRECT_MESSAGE' || space.singleUserBotDm === true,
   };
+}
+
+function aiFooter_() {
+  return isOn_('SHOW_AI_LABEL') ? AI_FOOTER_TEXT : '';
 }
 
 // ===== Setup.gs =====

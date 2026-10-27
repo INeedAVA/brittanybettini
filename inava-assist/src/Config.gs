@@ -27,6 +27,10 @@ const DEFAULTS = {
   // A new concern from the same person in the same category within this many
   // hours is treated as a follow-up to their open ticket, not a new ticket.
   DEDUP_HOURS: '24',
+  // Show "Source: <document>" under answers ('on' / 'off').
+  SHOW_SOURCES: 'off',
+  // Show "INAVA Assist · AI assistant" under every reply ('on' / 'off').
+  SHOW_AI_LABEL: 'off',
 };
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -92,6 +96,10 @@ function getProp_(key) {
   const value = PropertiesService.getScriptProperties().getProperty(key);
   if (value !== null && value !== '') return value;
   return DEFAULTS.hasOwnProperty(key) ? DEFAULTS[key] : null;
+}
+
+function isOn_(key) {
+  return String(getProp_(key)).trim().toLowerCase() === 'on';
 }
 
 function setProp_(key, value) {

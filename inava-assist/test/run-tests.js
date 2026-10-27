@@ -170,9 +170,16 @@ test('VA in a DM gets VA + general docs only, and only real sources are cited', 
   claudeReturns(env, answer({ reply: 'Request leave 2 weeks ahead.', sources: ['VA Handbook', 'Made Up Policy'] }));
   const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How do I request leave?'));
   assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ', 'VA Handbook']);
-  assert.match(r.text, /Source: VA Handbook_/);
-  assert.doesNotMatch(r.text, /Made Up/);
-  assert.match(r.text, /AI assistant/);
+  assert.strictEqual(r.text, 'Request leave 2 weeks ahead.', 'no source line or AI label by default');
+  const log = env.sheet('Audit Log').slice(-1)[0].join(' ');
+  assert.match(log, /sources: VA Handbook/);
+  assert.doesNotMatch(log, /Made Up/);
+  env.props.SHOW_SOURCES = 'on';
+  env.props.SHOW_AI_LABEL = 'on';
+  const r2 = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How do I request leave?'));
+  assert.match(r2.text, /Source: VA Handbook_/);
+  assert.doesNotMatch(r2.text, /Made Up/);
+  assert.match(r2.text, /AI assistant/);
   // Remembers the VA's DM space for future notifications.
   assert.strictEqual(env.sheet('Users').find((u) => u[0] === 'va@inava.test')[6], 'spaces/dm-u6');
 });
