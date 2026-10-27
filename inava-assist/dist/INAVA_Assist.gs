@@ -44,7 +44,8 @@ const SYNC_REPLY_BUDGET_MS = 24000;
 // Upper bound on knowledge base text sent to Claude per question.
 const MAX_KNOWLEDGE_CHARS = 600000;
 
-const ROLES = ['CLIENT', 'VA', 'HR', 'MANAGEMENT', 'ADMIN'];
+// INAVA Assist serves VAs and the internal team. Clients are outside the Workspace and never use it.
+const ROLES = ['VA', 'HR', 'MANAGEMENT', 'ADMIN'];
 
 // Roles that may run ticket commands for tickets they are not assigned to.
 const STAFF_ROLES = ['HR', 'MANAGEMENT', 'ADMIN'];
@@ -277,10 +278,10 @@ function audit_(entry) {
  * not listed there, or not marked Active, gets no AI answers and no knowledge.
  *
  * What a person may see depends on two things:
- *   1. their Role (CLIENT, VA, HR, MANAGEMENT, ADMIN) and Client Accounts;
+ *   1. their Role (VA, HR, MANAGEMENT, ADMIN) and, for VAs, the client accounts they work on;
  *   2. where they are asking. In a shared space everyone in the space reads the
  *      answer, so the space's Audience also limits what may be used. A manager
- *      asking in a client space only gets client-safe knowledge.
+ *      asking in a VA space only gets VA-safe knowledge.
  */
 
 function findUser_(email) {
@@ -326,7 +327,7 @@ function findSpace_(spaceId) {
         name: String(r['Space Name'] || ''),
         approved: isYes_(r['Approved']),
         // An unset or unknown audience is treated as the most restrictive one.
-        audience: ROLES.indexOf(audience) >= 0 ? audience : 'CLIENT',
+        audience: ROLES.indexOf(audience) >= 0 ? audience : 'VA',
         clientAccount: lower_(r['Client Account']),
       };
     }
@@ -342,7 +343,7 @@ function registerSpace_(spaceId, displayName, addedBy) {
     'Space ID': spaceId,
     'Space Name': displayName || '',
     'Approved': 'NO',
-    'Audience': 'CLIENT',
+    'Audience': 'VA',
     'Client Account': '',
     'Added On': new Date(),
     'Notes': 'Added by ' + (addedBy || 'unknown') + '. Set Approved to YES to enable.',
@@ -403,8 +404,8 @@ function lower_(value) {
 /**
  * Knowledge base: approved Google Docs listed in the Knowledge tab.
  *
- * Each row has a Title, a Google Doc URL, an Access list (any of ALL, CLIENT,
- * VA, HR, MANAGEMENT), an optional Client Account, and a Status. Only rows with
+ * Each row has a Title, a Google Doc URL, an Access list (any of ALL, VA, HR,
+ * MANAGEMENT), an optional Client Account, and a Status. Only rows with
  * Status = Approved are ever used. To retire a document, change its Status.
  *
  * Each document must be a Google Doc shared with the service account (Viewer).
@@ -539,7 +540,7 @@ function refreshKnowledgeBase() {
  */
 
 const SYSTEM_PROMPT = [
-  'You are INAVA Assist, the AI assistant of I Need A VA (INAVA), a virtual assistant agency. You answer questions from INAVA clients, virtual assistants (VAs), HR and management inside Google Chat, and you spot concerns that a person on the INAVA team needs to handle.',
+  'You are INAVA Assist, the AI assistant of I Need A VA (INAVA), a virtual assistant agency. You answer questions from INAVA\'s virtual assistants (VAs) and its internal team (HR and management) inside Google Chat, and you spot concerns that a person on the INAVA team needs to handle. INAVA\'s clients do not use this chat; concerns about clients reach you through VAs and staff.',
   '',
   'Who you are',
   '- You are an AI assistant, not a person. If anyone asks, or seems to think they are talking to a person, say plainly that you are an AI.',
@@ -562,7 +563,7 @@ const SYSTEM_PROMPT = [
   '- In "concern_summary" for PAYROLL, describe the type of issue only (for example "reports a missing payment for the latest pay period"). Never include amounts, account numbers or other figures.',
   '',
   'When to escalate (set "escalate" to true)',
-  '- CLIENT_CARE: a client is unhappy, reports a problem with their VA or service quality, wants changes to their service, or has a billing question that is not payroll.',
+  '- CLIENT_CARE: a VA or staff member reports that a client is unhappy, has a problem with service quality, wants changes to their service, has a billing question, or there is a difficult client situation the VA needs help with.',
   '- OPERATIONS: urgent operational problems, a VA no-show or outage affecting a client, complaints about management, safety, legal or harassment issues, or anything that needs a management decision.',
   '- RECRUITMENT_HR: hiring and applications, onboarding, leave requests, attendance, performance, conduct, VA wellbeing, or other HR matters.',
   '- PAYROLL: anything about a VA\'s pay (see above).',
@@ -1547,7 +1548,7 @@ function setup() {
   dropdown(SHEETS.USERS, 'Role', ROLES);
   dropdown(SHEETS.USERS, 'Active', ['YES', 'NO']);
   dropdown(SHEETS.SPACES, 'Approved', ['YES', 'NO']);
-  dropdown(SHEETS.SPACES, 'Audience', ['CLIENT', 'VA', 'HR', 'MANAGEMENT']);
+  dropdown(SHEETS.SPACES, 'Audience', ['VA', 'HR', 'MANAGEMENT']);
   dropdown(SHEETS.ROUTING, 'Payroll Cleared', ['YES', 'NO']);
   dropdown(SHEETS.KNOWLEDGE, 'Status', ['Approved', 'Draft', 'Retired']);
   dropdown(SHEETS.TICKETS, 'Status', STATUSES);
@@ -1654,12 +1655,12 @@ function checkSetup() {
  */
 function tryInEditor() {
   resetMemo_();
-  const ROLE = 'VA';                       // CLIENT, VA, HR, MANAGEMENT or ADMIN
+  const ROLE = 'VA';                       // VA, HR, MANAGEMENT or ADMIN
   const IN_SHARED_SPACE = false;           // true = answer as if in a space
   const QUESTION = 'How do I request time off?';
 
   const user = { name: 'Test User', email: 'test@example.com', role: ROLE, clientAccounts: [] };
-  const space = IN_SHARED_SPACE ? { audience: ROLE === 'CLIENT' ? 'CLIENT' : 'VA', clientAccount: '' } : null;
+  const space = IN_SHARED_SPACE ? { audience: 'VA', clientAccount: '' } : null;
   const ctx = buildAccessContext_(user, space);
   const knowledge = loadKnowledgeFor_(ctx);
   console.log('Documents available: ' + (knowledge.docs.map(function (d) { return d.title; }).join(', ') || 'none'));

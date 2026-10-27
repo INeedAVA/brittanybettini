@@ -57,7 +57,7 @@ function setup() {
   dropdown(SHEETS.USERS, 'Role', ROLES);
   dropdown(SHEETS.USERS, 'Active', ['YES', 'NO']);
   dropdown(SHEETS.SPACES, 'Approved', ['YES', 'NO']);
-  dropdown(SHEETS.SPACES, 'Audience', ['CLIENT', 'VA', 'HR', 'MANAGEMENT']);
+  dropdown(SHEETS.SPACES, 'Audience', ['VA', 'HR', 'MANAGEMENT']);
   dropdown(SHEETS.ROUTING, 'Payroll Cleared', ['YES', 'NO']);
   dropdown(SHEETS.KNOWLEDGE, 'Status', ['Approved', 'Draft', 'Retired']);
   dropdown(SHEETS.TICKETS, 'Status', STATUSES);
@@ -164,12 +164,12 @@ function checkSetup() {
  */
 function tryInEditor() {
   resetMemo_();
-  const ROLE = 'VA';                       // CLIENT, VA, HR, MANAGEMENT or ADMIN
+  const ROLE = 'VA';                       // VA, HR, MANAGEMENT or ADMIN
   const IN_SHARED_SPACE = false;           // true = answer as if in a space
   const QUESTION = 'How do I request time off?';
 
   const user = { name: 'Test User', email: 'test@example.com', role: ROLE, clientAccounts: [] };
-  const space = IN_SHARED_SPACE ? { audience: ROLE === 'CLIENT' ? 'CLIENT' : 'VA', clientAccount: '' } : null;
+  const space = IN_SHARED_SPACE ? { audience: 'VA', clientAccount: '' } : null;
   const ctx = buildAccessContext_(user, space);
   const knowledge = loadKnowledgeFor_(ctx);
   console.log('Documents available: ' + (knowledge.docs.map(function (d) { return d.title; }).join(', ') || 'none'));

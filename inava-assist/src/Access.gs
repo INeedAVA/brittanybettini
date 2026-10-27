@@ -6,10 +6,10 @@
  * not listed there, or not marked Active, gets no AI answers and no knowledge.
  *
  * What a person may see depends on two things:
- *   1. their Role (CLIENT, VA, HR, MANAGEMENT, ADMIN) and Client Accounts;
+ *   1. their Role (VA, HR, MANAGEMENT, ADMIN) and, for VAs, the client accounts they work on;
  *   2. where they are asking. In a shared space everyone in the space reads the
  *      answer, so the space's Audience also limits what may be used. A manager
- *      asking in a client space only gets client-safe knowledge.
+ *      asking in a VA space only gets VA-safe knowledge.
  */
 
 function findUser_(email) {
@@ -55,7 +55,7 @@ function findSpace_(spaceId) {
         name: String(r['Space Name'] || ''),
         approved: isYes_(r['Approved']),
         // An unset or unknown audience is treated as the most restrictive one.
-        audience: ROLES.indexOf(audience) >= 0 ? audience : 'CLIENT',
+        audience: ROLES.indexOf(audience) >= 0 ? audience : 'VA',
         clientAccount: lower_(r['Client Account']),
       };
     }
@@ -71,7 +71,7 @@ function registerSpace_(spaceId, displayName, addedBy) {
     'Space ID': spaceId,
     'Space Name': displayName || '',
     'Approved': 'NO',
-    'Audience': 'CLIENT',
+    'Audience': 'VA',
     'Client Account': '',
     'Added On': new Date(),
     'Notes': 'Added by ' + (addedBy || 'unknown') + '. Set Approved to YES to enable.',

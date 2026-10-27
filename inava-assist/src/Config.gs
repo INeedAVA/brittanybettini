@@ -40,7 +40,8 @@ const SYNC_REPLY_BUDGET_MS = 24000;
 // Upper bound on knowledge base text sent to Claude per question.
 const MAX_KNOWLEDGE_CHARS = 600000;
 
-const ROLES = ['CLIENT', 'VA', 'HR', 'MANAGEMENT', 'ADMIN'];
+// INAVA Assist serves VAs and the internal team. Clients are outside the Workspace and never use it.
+const ROLES = ['VA', 'HR', 'MANAGEMENT', 'ADMIN'];
 
 // Roles that may run ticket commands for tickets they are not assigned to.
 const STAFF_ROLES = ['HR', 'MANAGEMENT', 'ADMIN'];

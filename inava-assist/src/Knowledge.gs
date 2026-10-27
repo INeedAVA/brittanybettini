@@ -1,8 +1,8 @@
 /**
  * Knowledge base: approved Google Docs listed in the Knowledge tab.
  *
- * Each row has a Title, a Google Doc URL, an Access list (any of ALL, CLIENT,
- * VA, HR, MANAGEMENT), an optional Client Account, and a Status. Only rows with
+ * Each row has a Title, a Google Doc URL, an Access list (any of ALL, VA, HR,
+ * MANAGEMENT), an optional Client Account, and a Status. Only rows with
  * Status = Approved are ever used. To retire a document, change its Status.
  *
  * Each document must be a Google Doc shared with the service account (Viewer).

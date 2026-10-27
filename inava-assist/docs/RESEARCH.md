@@ -73,11 +73,9 @@ settings can still block it, so check them:
    service account keys by default (policy `iam.disableServiceAccountKeyCreation`). If key
    creation fails in setup step 4, an Organization Policy Administrator has to allow keys for the
    `inava-assist` project only.
-3. **External clients (verify before any client rollout).** Google limits how Chat apps behave
-   with people outside your organisation, and admins can set separate rules for external spaces.
-   Test with one external test account, never a real client, before you plan any client-facing
-   use. If clients can't use the bot, INAVA Assist still works for VAs, HR and management, and
-   clients can be served through a VA.
+3. **Clients are out of scope.** INAVA's clients are outside the Workspace and don't join its
+   spaces, so INAVA Assist is used only by VAs and the internal team. Client concerns reach it
+   through VAs and staff.
 
 You would need admin approval later for: monitoring untagged messages (section 4), and letting
 the bot start DMs or create spaces itself (`chat.app.spaces.create`).
@@ -88,7 +86,7 @@ the bot start DMs or create spaces itself (`chat.app.spaces.create`).
   once, through a "requires configuration" card in Chat.
   ([Authorization scopes](https://developers.google.com/apps-script/concepts/scopes),
   [Granular OAuth for Chat apps](https://developers.google.com/workspace/chat/authenticate-authorize-granular-oauth-permissions))
-  If the bot read the control sheet with that person's identity, every VA and client would need
+  If the bot read the control sheet with that person's identity, every VA would need
   access to the sheet. **What INAVA Assist does:** it asks people for only one permission,
   "connect to an external service". It reads and writes the sheet and documents through the
   Sheets and Drive APIs **as its service account**, and only the service account and you can
