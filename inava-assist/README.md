@@ -128,8 +128,10 @@ the only account (besides you) that can open the control sheet and the knowledge
    - **App name:** `INAVA Assist`
    - **Avatar URL:** any public https image link, for example your logo
    - **Description:** `AI assistant for I Need A VA`
-   - If you see **"Build this Chat app as a Google Workspace add-on"**, either setting works.
-     The code supports both. Unticked matches Google's Apps Script samples.
+   - If you see **"Build this Chat app as a Google Workspace add-on"**, leave it **ticked**.
+     The included `appsscript.json` is set up for add-on mode, which is Google's current default.
+     (The code also handles the older "classic" mode, but that needs a top-level `"chat": {}`
+     in `appsscript.json` instead of the `addOns` block.)
    - **Functionality:** tick **Join spaces and group conversations**, and **Receive 1:1
      messages** if it's shown.
    - **Connection settings:** choose **Apps Script** and paste the Head Deployment ID.
