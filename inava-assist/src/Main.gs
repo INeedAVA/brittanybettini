@@ -147,7 +147,7 @@ function handleMessage_(ev) {
       reply += '\n\nReference: *' + result.ticketId + '*' +
         (result.notified ? ' (passed privately to the right INAVA team member)' : ' (logged for the INAVA team)');
     } else {
-      reply += '\n\nI\'ve added this to your open concern *' + result.ticketId + '* so the same person follows up.';
+      reply += '\n\nReference: *' + result.ticketId + '* (added to your open concern)';
     }
   }
 

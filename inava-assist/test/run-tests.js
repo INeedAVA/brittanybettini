@@ -240,10 +240,20 @@ test('repeat of the same concern is a follow-up, not a duplicate ticket', () => 
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I need Dec 24 off'));
   const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Any update on my leave?'));
   assert.strictEqual(ticketRows(env).length, 1);
-  assert.match(r.text, /added this to your open concern/);
+  assert.match(r.text, /\(added to your open concern\)/);
   assert.match(ticketRows(env)[0].History, /Follow-up/);
   // Claude is told about the open ticket the second time.
   assert.match(env.sent.claude[1].body.messages.slice(-1)[0].content, /INAVA-\d{6}-001 \(RECRUITMENT_HR, Assigned\)/);
+});
+
+test('Claude can mark a same-category concern as a separate ticket with NEW', () => {
+  const env = setupEnv();
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'Client A unhappy.' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Client A is unhappy'));
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'Client B unhappy.', duplicate_of_ticket: 'NEW' }));
+  const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Different client, B, is also unhappy'));
+  assert.strictEqual(ticketRows(env).length, 2);
+  assert.match(r.text, /Reference: \*INAVA-\d{6}-002\* \(passed privately/);
 });
 
 test('payroll: figures are stripped and only the cleared payroll contact gets details', () => {

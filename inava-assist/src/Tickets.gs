@@ -186,6 +186,7 @@ function handleEscalation_(decision, user, source) {
 function findDuplicate_(decision, user, category) {
   const open = openTicketsFor_(user.email);
   const named = String(decision.duplicate_of_ticket || '').trim().toUpperCase();
+  if (named === 'NEW') return null;
   if (named) {
     for (let i = 0; i < open.length; i++) if (open[i].id.toUpperCase() === named) return open[i];
   }
