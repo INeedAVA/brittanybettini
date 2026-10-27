@@ -273,7 +273,7 @@ test('payroll: figures are stripped and only the cleared payroll contact gets de
   assert.doesNotMatch(t.Summary, /1,250|1234/);
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
   assert.ok(dm);
-  assert.match(dm.body.text, /What it's about: Missing pay/);
+  assert.match(dm.body.text, /Hi Pat, Vicky needs help with a payroll matter \(urgent\):\n\nMissing pay/);
   assert.ok(!env.sent.chat.some((c) => /dm-mabelle|dm-cyn|dm-verge/.test(c.url)));
 });
 
@@ -284,7 +284,7 @@ test('payroll routed to someone not cleared: details withheld', () => {
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', concern_summary: 'Deduction question.' }));
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Why the deduction?'));
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
-  assert.match(dm.body.text, /Details are withheld here/);
+  assert.match(dm.body.text, /Details are private/);
   assert.doesNotMatch(dm.body.text, /Deduction question/);
 });
 
