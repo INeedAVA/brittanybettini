@@ -210,13 +210,13 @@ function findDuplicate_(decision, user, category) {
   return null;
 }
 
-// Plain words for each category, used in messages to the team.
-const TOPIC = {
-  CLIENT_CARE: 'a client issue',
-  OPERATIONS: 'an operations matter',
-  RECRUITMENT_HR: 'an HR matter',
-  PAYROLL: 'a payroll matter',
-};
+/** The Name / Concern / Priority block used in every message to the team. */
+function concernLines_(ticket, concern) {
+  const p = String(ticket.priority || 'NORMAL');
+  return ['Name: ' + (ticket.requesterName || ticket.requesterEmail),
+    'Concern: ' + concern,
+    'Priority: ' + p.charAt(0) + p.slice(1).toLowerCase()].join('\n\n');
+}
 
 /** "Cyn (TEST: goes to smm)" -> "Cyn"; "Vicky Santos" -> "Vicky". */
 function firstName_(name) {
@@ -232,18 +232,14 @@ function notifyAssignee_(ticket, followUp) {
   const routing = getRouting_(ticket.category);
   const cleared = ticket.category !== 'PAYROLL' || (routing && routing.payrollCleared &&
     (ticket.assigneeEmail === routing.email || ticket.assigneeEmail === routing.backupEmail));
-  const who = firstName_(ticket.requesterName) || ticket.requesterEmail;
-  const topic = TOPIC[ticket.category] || 'something';
-  const urgent = ticket.priority === 'URGENT' || ticket.priority === 'HIGH' ? ' (urgent)' : '';
-  const details = cleared ? (followUp || ticket.summary) : 'Details are private. Please contact ' + who + ' directly.';
+  const details = cleared ? (followUp || ticket.summary)
+    : 'Payroll matter (details are private, please contact ' + firstName_(ticket.requesterName) + ' directly)';
 
-  // Blank lines between parts: Google Chat may join single line breaks.
-  const parts = followUp
-    ? ['Update from ' + who + ' on ' + topic + ' you\'re handling:', details]
-    : ['Hi ' + (firstName_(ticket.assigneeName) || 'there') + ', ' + who + ' needs help with ' + topic + urgent + ':', details];
-  if (!followUp && cleared && ticket.recommendedAction) parts.push('Suggested next step: ' + ticket.recommendedAction);
+  // Blank lines between lines: Google Chat may join single line breaks.
+  const parts = [followUp ? 'Update on a concern' : 'New concern'];
+  parts.push(concernLines_(ticket, details));
   if (ticket.sourceLink) parts.push('Conversation: ' + ticket.sourceLink);
-  parts.push((followUp ? '' : 'Please reply by ' + formatTime_(ticket.dueBy) + '. ') + 'When it\'s sorted, reply: done ' + ticket.id);
+  parts.push('When it\'s sorted, reply: done ' + ticket.id);
   const text = parts.join('\n\n');
 
   const recipients = [ticket.assigneeEmail];
@@ -265,10 +261,9 @@ function alertOperations_(ticket, user) {
   const ops = getRouting_('OPERATIONS');
   if (!ops || !ops.email || ops.email === ticket.assigneeEmail) return;
   try {
-    sendPrivateMessage_(ops.email, 'Hi ' + (firstName_(ops.name) || 'there') + ', ' + firstName_(user.name) + ' needs help with ' +
-      (TOPIC[ticket.category] || 'something') + ', but I couldn\'t reach ' + (firstName_(ticket.assigneeName) || 'the right person') + '.' +
-      (ticket.category === 'PAYROLL' ? '' : '\n\n' + ticket.summary) +
-      '\n\nCould you make sure someone follows up? When it\'s sorted, reply: done ' + ticket.id);
+    sendPrivateMessage_(ops.email, ['New concern (I couldn\'t reach ' + (firstName_(ticket.assigneeName) || 'the right person') + ')',
+      concernLines_(ticket, ticket.category === 'PAYROLL' ? 'Payroll matter (details are private)' : ticket.summary),
+      'When it\'s sorted, reply: done ' + ticket.id].join('\n\n'));
     appendHistory_(ticket, 'Assignee unreachable; Operations (' + ops.email + ') alerted');
   } catch (e) {
     console.error('Operations alert for ' + ticket.id + ' failed: ' + e);
@@ -371,9 +366,9 @@ function checkOverdueTickets() {
     if (t.lastReminder && now - t.lastReminder.getTime() < every) return;
 
     const hoursLate = Math.round((now - t.dueBy.getTime()) / 3600000);
-    const text = 'Reminder: ' + firstName_(t.requesterName) + ' is still waiting for help with ' + (TOPIC[t.category] || 'something') + '.' +
-      (t.category === 'PAYROLL' ? '' : '\n\n' + t.summary) +
-      '\n\nWhen it\'s sorted, reply: done ' + t.id;
+    const text = ['Reminder: still waiting for help',
+      concernLines_(t, t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary),
+      'When it\'s sorted, reply: done ' + t.id].join('\n\n');
     let sent = false;
     try {
       sent = t.assigneeEmail ? sendPrivateMessage_(t.assigneeEmail, text) : false;
@@ -387,9 +382,8 @@ function checkOverdueTickets() {
     // Tell Operations once: after repeated reminders, or straight away if the assignee can't be reached.
     if ((reminders === ESCALATE_AFTER_REMINDERS || (!sent && reminders === 1)) && ops && ops.email && ops.email !== t.assigneeEmail) {
       try {
-        sendPrivateMessage_(ops.email, 'Heads up: ' + firstName_(t.requesterName) + ' is still waiting for help with ' +
-          (TOPIC[t.category] || 'something') + ' (with ' + (firstName_(t.assigneeName) || 'nobody yet') + ', ' + hoursLate + 'h overdue).' +
-          (t.category === 'PAYROLL' ? '' : '\n\n' + t.summary));
+        sendPrivateMessage_(ops.email, ['Heads up: this is ' + hoursLate + 'h overdue with ' + (firstName_(t.assigneeName) || 'nobody yet'),
+          concernLines_(t, t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary)].join('\n\n'));
         appendHistory_(t, 'Escalated to Operations (' + ops.email + ')');
       } catch (e) {
         console.error('Escalation for ' + t.id + ' failed: ' + e);

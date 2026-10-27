@@ -237,8 +237,8 @@ test('client care concern opens a ticket and privately notifies Cyn', () => {
   assert.strictEqual(t['Source Link'], 'https://chat.google.com/room/acme/abc');
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-cyn/messages') >= 0);
   assert.ok(dm, 'Cyn was messaged');
-  assert.match(dm.body.text, /Client unhappy/);
-  assert.match(dm.body.text, /Call the client today/);
+  assert.match(dm.body.text, /^New concern\n\nName: Andy \(Acme VA\)\n\nConcern: Client unhappy with VA response times\.\n\nPriority: High/);
+  assert.match(dm.body.text, /When it's sorted, reply: done INAVA-\d{6}-001$/);
   assert.match(dm.body.text, /chat\.google\.com\/room\/acme\/abc/);
 });
 
@@ -273,7 +273,7 @@ test('payroll: figures are stripped and only the cleared payroll contact gets de
   assert.doesNotMatch(t.Summary, /1,250|1234/);
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
   assert.ok(dm);
-  assert.match(dm.body.text, /Hi Pat, Vicky needs help with a payroll matter \(urgent\):\n\nMissing pay/);
+  assert.match(dm.body.text, /Name: Vicky VA\n\nConcern: Missing pay[\s\S]*Priority: Urgent/);
   assert.ok(!env.sent.chat.some((c) => /dm-mabelle|dm-cyn|dm-verge/.test(c.url)));
 });
 
@@ -284,7 +284,7 @@ test('payroll routed to someone not cleared: details withheld', () => {
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', concern_summary: 'Deduction question.' }));
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Why the deduction?'));
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
-  assert.match(dm.body.text, /Details are private/);
+  assert.match(dm.body.text, /Concern: Payroll matter \(details are private/);
   assert.doesNotMatch(dm.body.text, /Deduction question/);
 });
 
