@@ -8,7 +8,7 @@
   "addOns": {
     "common": {
       "name": "Ask INAVA",
-      "logoUrl": "https://developers.google.com/chat/images/quickstart-app-avatar.png"
+      "logoUrl": "https://raw.githubusercontent.com/INeedAVA/brittanybettini/01318df5a9ec7c873b157748886c3e5dc489a636/inava-assist/marketplace/icon-256.png"
     },
     "chat": {}
   }
