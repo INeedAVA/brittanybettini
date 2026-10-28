@@ -219,10 +219,32 @@ const SENSITIVE_TEXT = 'Sensitive personal safety concern. Please contact this V
  * that names a person (or not the Payroll Team) is replaced, so who handles pay stays private.
  */
 function safeHandoff_(category, text, isFollowUp) {
-  const h = String(text || '').trim();
+  const h = trimPromise_(String(text || '').trim());
   if (!h) return defaultHandoff_(category, isFollowUp);
   if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp);
   return h;
+}
+
+// A handoff may only say the concern was passed on. Promises about what happens next
+// ("and they'll get back to you", "ug mo-reply sila nimo", "at siya ang titingin dito") are not
+// backed by any record, so they are cut off; if the sentence can't be cut cleanly, or uses
+// he/she instead of a name, the standard handoff is used.
+const HANDOFF_PROMISE = /\b(?:get back to you|get in touch|contact you|call you|reach out|be in touch|follow up with you|talk (?:to|with) you|speak (?:to|with) you|(?:will|'ll|can) (?:review|resolve|fix|handle|sort|decide|approve|look|check|help|reply|respond)|babalikan|kokontakin|tatawagan|titingnan|titingin|aasikasuhin|aayusin|kakausapin|mo-?contact|mo-?reply|motubag|kontakon|tawgan|motawag|tan-awon|atimanon|sulbaron)\b/i;
+const HANDOFF_CUT = /(?:,\s*|\s+)(?:and|so|so that|who|who will|ug|aron|para|at|kay|nga)\s+/gi;
+const HANDOFF_PRONOUN = /\b(?:she|he|her|him|his|siya|sya|niya)\b/i;
+
+function trimPromise_(h) {
+  if (!h) return '';
+  if (HANDOFF_PROMISE.test(h)) {
+    const m = h.match(HANDOFF_PROMISE);
+    let cut = -1, x;
+    HANDOFF_CUT.lastIndex = 0;
+    while ((x = HANDOFF_CUT.exec(h)) && x.index < m.index) cut = x.index;
+    if (cut <= 0) return '';
+    h = h.slice(0, cut).replace(/[,;:\s]+$/, '') + '.';
+    if (HANDOFF_PROMISE.test(h)) return '';
+  }
+  return HANDOFF_PRONOUN.test(h) ? '' : h;
 }
 
 function namesTeamMember_(text) {
@@ -237,7 +259,7 @@ function defaultHandoff_(category, isFollowUp) {
     return isFollowUp ? 'I\'ve let ' + who + ' know about this update.' : 'I\'ve forwarded your concern to ' + who + ' for review.';
   }
   return isFollowUp ? 'I\'ve let ' + who + ' know about this update.'
-    : 'I\'ve passed this to ' + who + ', and they\'ll get back to you.';
+    : 'I\'ve passed this to ' + who + ' for review.';
 }
 
 /**
@@ -650,22 +672,65 @@ function canManageTicket_(user, ticket) {
   return user.role === 'MANAGEMENT';
 }
 
-/** Handles "status <ticket> <new status> [note]". Returns the reply text. */
-function updateTicketStatus_(user, ticketId, statusWords, note) {
-  const ticket = findTicket_(ticketId);
-  if (!ticket) return 'I could not find ticket ' + ticketId + '.';
-  if (!canManageTicket_(user, ticket)) return 'Only the assigned team member or management can update ' + ticket.id + '.';
-  const status = matchStatus_(statusWords);
-  if (!status) return 'Status must be one of: ' + STATUSES.join(', ') + '.';
+/**
+ * Exact Google accounts (Script Property PAYROLL_CLOSERS, comma-separated) that may close payroll
+ * tickets without being their assignee, e.g. the Operations Manager when the payroll handler is
+ * away. It is tied to the person's own signed-in Chat account, not to a role. It only allows
+ * marking a payroll ticket Resolved: not viewing its details, changing its status otherwise, or
+ * anything about payments or pay (Ask INAVA has no such actions at all).
+ */
+function isPayrollCloser_(user) {
+  return splitList_(getProp_('PAYROLL_CLOSERS')).map(lower_).indexOf(lower_(user.email)) >= 0;
+}
 
-  updateObject_(SHEETS.TICKETS, ticket.row, { 'Status': status });
-  appendHistory_(ticket, 'Status set to ' + status + ' by ' + user.name + (note ? ': ' + note : ''));
-  audit_({ email: user.email, role: user.role, action: 'TICKET_STATUS', ticketId: ticket.id, detail: status });
+function canCloseTicket_(user, ticket) {
+  return canManageTicket_(user, ticket) || (ticket.category === 'PAYROLL' && isPayrollCloser_(user));
+}
+
+/** Handles "done <ticket>" and "status <ticket> <new status> [note]". Returns the reply text. */
+function updateTicketStatus_(user, ticketId, statusWords, note) {
+  const status = matchStatus_(statusWords);
+  // Two people closing at the same moment: the lock and a fresh read make the second one a no-op.
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let ticket, resolutionMessageId;
+  try {
+    resetMemo_();
+    ticket = findTicket_(ticketId);
+    if (!ticket) return 'I could not find ticket ' + ticketId + '.';
+    const allowed = status === 'Resolved' ? canCloseTicket_(user, ticket) : canManageTicket_(user, ticket);
+    if (!allowed) return 'Only the assigned team member or management can update ' + ticket.id + '.';
+    if (!status) return 'Status must be one of: ' + STATUSES.join(', ') + '.';
+    if (status === ticket.status) {
+      return ticket.id + ' is already ' + (status === 'Resolved' ? 'marked as done' : status) + '. Nothing was changed.';
+    }
+    const viaPermission = status === 'Resolved' && !canManageTicket_(user, ticket);
+    // Closing someone else's payroll ticket needs a short note on how it was resolved, so it is
+    // closed because the concern was addressed, not just to stop the reminders.
+    if (viaPermission && !String(note || '').trim()) {
+      return 'Please add a short note on how ' + ticket.id + ' was resolved, for example: done ' + ticket.id + ' confirmed with the VA that it was paid.';
+    }
+    // Notes can contain pay figures or codes: stored with the same redaction as the concern.
+    const cleanNote = redactConcern_(ticket.category, String(note || '').trim());
+    updateObject_(SHEETS.TICKETS, ticket.row, { 'Status': status });
+    appendHistory_(ticket, 'Status set to ' + status + ' by ' + user.name + ' (' + user.email + ')' +
+      (viaPermission ? ' using the payroll closure permission' : '') + (cleanNote ? ': ' + cleanNote : ''));
+    audit_({ email: user.email, role: user.role, action: 'TICKET_STATUS', ticketId: ticket.id,
+      detail: status + (viaPermission ? ' (payroll closure permission)' : '') });
+    if (status === 'Resolved') {
+      // One message per resolution: a retried or repeated close never notifies the VA twice.
+      const times = (ticket.history.match(/Status set to Resolved/g) || []).length;
+      resolutionMessageId = clientMessageId_(ticket.id + '-resolved-' + times);
+    }
+  } finally {
+    lock.releaseLock();
+  }
 
   if (status === 'Resolved' && ticket.source === 'Direct message') {
     try {
+      // Public team name only: never who closed it (payroll stays "our Payroll Team").
       sendPrivateMessage_(ticket.requesterEmail, 'Quick update: ' + capitalise_(teamNames_()[ticket.category] || 'our team') +
-        ' has marked what you raised with me as sorted. If anything is still not right, just tell me.');
+        ' has marked what you raised with me as sorted. If anything is still not right, just tell me.', resolutionMessageId);
     } catch (e) {
       console.warn('Could not tell requester about resolution: ' + e);
     }

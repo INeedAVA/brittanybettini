@@ -450,7 +450,7 @@ test('ticket commands: assignee can update, others cannot, and never in a space'
   assert.match(r.text, /direct message/);
   r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'status ' + id + ' in progress called them'));
   assert.match(r.text, /now In Progress/);
-  assert.match(ticketRows(env)[0].History, /In Progress by Cyn: called them/);
+  assert.match(ticketRows(env)[0].History, /In Progress by Cyn \(cyn@inava.test\): called them/);
   r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'my tickets'));
   assert.match(r.text, new RegExp(id));
   r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'ticket ' + id));
@@ -604,7 +604,7 @@ test('clear concern: one ticket, NEW CONCERN card unchanged, handoff only after 
   assert.match(posts[0].url, /messageId=client-inava-\d{6}-001-new$/);
   // The AI's own "I've passed this" claim is removed; the system's handoff is added once.
   assert.strictEqual(r.text, 'That sounds really stressful. Try replying to the client calmly today.\n\n' +
-    'I\'ve passed this to Cyn from our Client Care team, and they\'ll get back to you.');
+    'I\'ve passed this to Cyn from our Client Care team.', 'a promise about what happens next is cut from the handoff');
   assert.doesNotMatch(r.text, /INAVA-|ticket/i);
 });
 
@@ -696,7 +696,7 @@ test('Bisaya and Tagalog concerns are recorded word for word, reply in their lan
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Pasensya kaayo, kabalo ko nga lisod kana.',
     concerns: [concern({ category: 'CLIENT_CARE', priority: 'HIGH', handoff: 'Gipasa na nako ni kay Cyn sa among Client Care team, ug siya ang mo-contact nimo.' })] }));
   let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?'));
-  assert.strictEqual(r.text, 'Pasensya kaayo, kabalo ko nga lisod kana.\n\nGipasa na nako ni kay Cyn sa among Client Care team, ug siya ang mo-contact nimo.');
+  assert.strictEqual(r.text, 'Pasensya kaayo, kabalo ko nga lisod kana.\n\nGipasa na nako ni kay Cyn sa among Client Care team.');
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Naiintindihan kita, nakakabahala talaga \'yan. Naipasa ko na ito sa Payroll.',
     concerns: [concern({ category: 'PAYROLL', priority: 'URGENT', handoff: 'Ipinasa ko na ito sa aming Payroll Team.' })] }));
   r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Wala pa akong sahod for this cutoff, ₱8,500 dapat'));
@@ -921,7 +921,7 @@ test('live language test: checks each case, writes results, never posts or creat
   assert.strictEqual(rows[0][0], 'Time');
   const total = rows[rows.length - 1];
   assert.strictEqual(total[1], 'TOTAL');
-  assert.match(total[11], /^\d+\/34 cases passed, estimated cost \$0\.0119/);
+  assert.match(total[11], /^\d+\/36 cases passed, estimated cost \$0\.0126/);
   assert.ok(rows.some((r) => r[10] === 'PASS') && rows.some((r) => r[10] === 'CHECK'));
   // A status case is answered by the real status code from the made-up record, not the AI's words.
   const statusRow = rows.find((r) => r[3] === 'Any update on my leave request?');
@@ -956,7 +956,7 @@ test('routine client frustration gets advice and an offer, no ticket; mistreatme
   assert.strictEqual(ticketRows(env).length, 1);
   assert.strictEqual(ticketRows(env)[0].Priority, 'HIGH');
   assert.match(cardText(inboxPosts(env)[0]), /^<font color="#D93025"><b>NEW CONCERN<\/b><\/font><br><br>Name: Vicky VA<br><br>Concern: My client curses at me/);
-  assert.strictEqual(r.text, 'Nobody should be spoken to like that, and I\'m sorry.\n\nI\'ve passed this to Cyn from our Client Care team, and they\'ll get back to you.');
+  assert.strictEqual(r.text, 'Nobody should be spoken to like that, and I\'m sorry.\n\nI\'ve passed this to Cyn from our Client Care team.');
 });
 
 test('premature handoff claims from the AI are never shown, in any language', () => {
@@ -1048,7 +1048,7 @@ test('final message: handoff goes where the AI put [HANDOFF], only after deliver
   claudeReturns(env, answer({ intent: 'CONCERN', reply, concerns: [concern({ handoff: 'I\'ve passed this to Cyn from our Client Care team, and they\'ll get back to you.' })] }));
   let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client yelled at me'));
   assert.strictEqual(r.text, 'That sounds really stressful, and I\'m sorry it happened.\n\n' +
-    'I\'ve passed this to Cyn from our Client Care team, and they\'ll get back to you.\n\n' +
+    'I\'ve passed this to Cyn from our Client Care team.\n\n' +
     'In the meantime:\n- write down what was said\n- keep replies calm', 'bullets keep their lines');
 
   const env2 = withInbox(setupEnv());
@@ -1131,7 +1131,7 @@ test('routing: each category names its designated contact and reaches the single
     claudeReturns(env, answer({ intent: 'CONCERN', reply: '', concerns: [concern({ category: cat })] }));
     const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Concern ' + i + ' about ' + cat + ' and $1,200.00'));
     assert.strictEqual(r.text, cat === 'PAYROLL' ? 'I\'ve forwarded your concern to our Payroll Team for review.'
-      : 'I\'ve passed this to ' + expected[cat] + ', and they\'ll get back to you.');
+      : 'I\'ve passed this to ' + expected[cat] + ' for review.');
     assert.strictEqual(ticketRows(env)[i]['Assignee Email'], 'mabelle@inava.test');
     assert.strictEqual(ticketRows(env)[i].Category, cat);
   });
@@ -1255,6 +1255,134 @@ test('reviewLeavePolicy shows the leave passages and the temporary note, changin
   assert.strictEqual(env.sent.chat.length + env.sent.claude.length, 0);
   assert.ok(logs.some((l) => /=== VA Handbook \(1 passage/.test(l) && /two \(2\) weeks before/.test(l)));
   assert.ok(logs.some((l) => /Temporary note currently sent to the AI:[^]*ten \(10\) business days/.test(l)));
+});
+
+test('payroll closure: Verge (handler) and Mabelle\'s exact account can close; Cyn and other managers cannot', () => {
+  const env = withInbox(setupEnv());
+  const pay = env.sheet('Routing').find((r) => r[0] === 'PAYROLL');
+  pay[1] = ''; pay[2] = 'verge@inava.test'; pay[4] = 'YES';
+  env.props.PAYROLL_CLOSERS = 'Mabelle@inava.test';
+  env.sheet('Users').push(['boss2@inava.test', 'Other Manager', 'MANAGEMENT', '', 'YES', 'users/9', 'spaces/dm-boss2', '']);
+  const raise = (text) => {
+    claudeReturns(env, answer({ intent: 'CONCERN', reply: '', concerns: [concern({ category: 'PAYROLL' })] }));
+    env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', text));
+    return ticketRows(env).slice(-1)[0]['Ticket ID'];
+  };
+  const inbox = (email, id, text) => env.ctx.onMessage(spaceEvent(email, id, 'spaces/inbox', text)).text;
+  const vaNotes = () => env.sent.chat.filter((c) => c.url.indexOf('spaces/dm-u6/messages') >= 0);
+  const id = raise('Wala pa akong sahod ngayong cutoff');
+  assert.strictEqual(ticketRows(env)[0]['Assignee Email'], 'verge@inava.test');
+
+  // Not allowed: Cyn (MANAGEMENT), another MANAGEMENT account, the VA.
+  assert.match(inbox('cyn@inava.test', 'users/2', 'done ' + id + ' paid'), /Only the assigned team member/);
+  assert.match(env.ctx.onMessage(dmEvent('boss2@inava.test', 'users/9', 'done ' + id + ' paid')).text, /Only the assigned team member/);
+  assert.match(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'done ' + id)).text, /Only the assigned team member/);
+  // Mabelle's permission is only to close: not to view details or set another status.
+  assert.match(env.ctx.onMessage(dmEvent('mabelle@inava.test', 'users/3', 'ticket ' + id)).text, /could not find/);
+  assert.match(inbox('mabelle@inava.test', 'users/3', 'status ' + id + ' in progress'), /Only the assigned team member/);
+  // Closing needs a note on how it was resolved (not just to stop reminders).
+  assert.match(inbox('mabelle@inava.test', 'users/3', 'done ' + id), /add a short note on how/);
+  assert.strictEqual(ticketRows(env)[0].Status, 'Assigned');
+  assert.strictEqual(vaNotes().length, 0);
+
+  // Allowed: Mabelle with a note, in the Team Inbox. Recorded with who and when; note redacted.
+  assert.match(inbox('mabelle@inava.test', 'users/3', 'done ' + id + ' confirmed with Vicky, ₱8,500 was paid'), /marked as done/);
+  let t = ticketRows(env)[0];
+  assert.strictEqual(t.Status, 'Resolved');
+  assert.match(t.History, /\d{4}-\d{2}-\d{2} \d{2}:\d{2} - Status set to Resolved by Mabelle \(mabelle@inava\.test\) using the payroll closure permission: confirmed with Vicky, \[amount removed\] was paid/);
+  assert.strictEqual(vaNotes().length, 1);
+  assert.match(vaNotes()[0].body.text, /^Quick update: Our Payroll Team has marked what you raised with me as sorted/);
+  assert.doesNotMatch(vaNotes()[0].body.text, /Mabelle|Verg/);
+
+  // Closing again (by anyone): nothing changes, no second notification.
+  assert.match(inbox('verge@inava.test', 'users/4', 'done ' + id), /already marked as done/);
+  assert.match(inbox('mabelle@inava.test', 'users/3', 'done ' + id + ' paid'), /already marked as done/);
+  assert.strictEqual(vaNotes().length, 1);
+  assert.strictEqual((ticketRows(env)[0].History.match(/Status set to Resolved/g) || []).length, 1);
+
+  // Resolved payroll tickets are left out of the daily check-in.
+  const before = inboxPosts(env).length;
+  env.ctx.checkOverdueTickets();
+  assert.strictEqual(inboxPosts(env).length, before);
+
+  // Verge, the handler, closes without the extra note; ADMIN access is unchanged.
+  const id2 = raise('Mali ang deduction sa payslip ko');
+  assert.match(inbox('verge@inava.test', 'users/4', 'done ' + id2), /marked as done/);
+  const id3 = raise('Late pa ang sahod ko');
+  assert.match(env.ctx.onMessage(dmEvent('britt@inava.test', 'users/1', 'done ' + id3)).text, /marked as done/);
+
+  // Without the Script Property, Mabelle (MANAGEMENT) cannot close payroll tickets.
+  delete env.props.PAYROLL_CLOSERS;
+  const id4 = raise('Wala pa ang 13th month ko');
+  assert.match(inbox('mabelle@inava.test', 'users/3', 'done ' + id4 + ' paid'), /Only the assigned team member/);
+});
+
+test('a reopened ticket that is resolved again notifies the VA once more, never twice for one closing', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Acme problem'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  const notes = () => env.sent.chat.filter((c) => c.url.indexOf('spaces/dm-u6/messages') >= 0).length;
+  env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'done ' + id));
+  env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'status ' + id + ' in progress client wrote again'));
+  env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'done ' + id));
+  env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'done ' + id));
+  assert.strictEqual(notes(), 2);
+  const ids = env.sent.chat.filter((c) => c.url.indexOf('spaces/dm-u6/messages') >= 0).map((c) => c.url.match(/messageId=([^&]+)/)[1]);
+  assert.deepStrictEqual(ids.map((x) => x.replace(/^client-inava-\d{6}-\d+-/, '')), ['resolved-1', 'resolved-2']);
+});
+
+test('language: instruction is last in the request; one retry only when clearly in the wrong language', () => {
+  const env = setupEnv();
+  const english = answer({ intent: 'QUESTION', reply: 'Sorry to hear Acme is pushing this further. Keep your replies calm and save copies of the emails.' });
+  const bisaya = answer({ intent: 'QUESTION', reply: 'Pasensya kaayo ani. Samtang naghulat pa ka, i-save ang mga email ug ayaw sa una pag-promise og refund.' });
+  let calls = 0;
+  env.setClaude((req) => {
+    calls++;
+    const content = req.body.messages.slice(-1)[0].content;
+    assert.match(content.split('\n').slice(-1)[0], /^Write "reply" and "handoff" in Bisaya \(Cebuano\), not Tagalog\./);
+    if (calls === 2) assert.match(content, /Your previous answer was in the wrong language/);
+    return { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(calls === 1 ? english : bisaya) }] } };
+  });
+  let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.'));
+  assert.strictEqual(calls, 2);
+  assert.match(r.text, /^Pasensya kaayo ani/);
+  assert.match(env.sheet('Audit Log').slice(-1)[0].join(' '), /language retry/);
+
+  // Bisaya with English work words: no retry. English question: no retry. Never more than one.
+  calls = 0;
+  claudeReturns(env, answer({ reply: 'Sige, tabangan tika. I-check nato imong schedule ug ang leave form sa HR, unya i-update nato ang client.' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Unsaon nako pag-file og leave karon?'));
+  claudeReturns(env, english);
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How do I file leave?'));
+  const n = env.sent.claude.length;
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Unsa man akong buhaton karon nga nasuko ang client?'));
+  assert.strictEqual(env.sent.claude.length - n, 2, 'one retry at most, even if still English');
+  assert.strictEqual(env.sent.claude.length, 2 + 1 + 1 + 2);
+});
+
+test('private-chat advice is removed in a direct message and kept in a shared space', () => {
+  const env = setupEnv();
+  const reply = 'I understand how stressful that is. Please message me directly for anything about your pay. Keep the payslip ready.';
+  claudeReturns(env, answer({ reply }));
+  assert.strictEqual(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'payslip question')).text,
+    'I understand how stressful that is. Keep the payslip ready.');
+  assert.strictEqual(env.ctx.onMessage(spaceEvent('va@inava.test', 'users/6', 'spaces/acme', 'payslip question')).text, reply);
+});
+
+test('handoffs only say the concern was passed on: promises and pronouns are cut, status claims removed', () => {
+  const env = withInbox(setupEnv());
+  const cases = [
+    ['I\'ve passed this to Cyn from our Client Care team, and they\'ll get back to you.', 'I\'ve passed this to Cyn from our Client Care team.'],
+    ['Naipasa ko na ito kay Cyn sa Client Care team, at siya ang titingin dito.', 'Naipasa ko na ito kay Cyn sa Client Care team.'],
+    ['I\'ve passed this to Cyn, who will call you tomorrow.', 'I\'ve passed this to Cyn.'],
+    ['She will look into it.', 'I\'ve passed this to Cyn from our Client Care team for review.'],
+  ];
+  cases.forEach(([handoff, shown], i) => {
+    claudeReturns(env, answer({ intent: 'CONCERN', reply: 'The team will look at it with you. [HANDOFF]', concerns: [concern({ handoff })] }));
+    const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Client issue ' + i));
+    assert.strictEqual(r.text, shown, handoff);
+  });
 });
 
 let failed = 0;

@@ -102,7 +102,7 @@ const WELCOME_TEXT = [
   'Hi! I\'m Ask INAVA, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
   '',
   '- Ask me anything about how things work at INAVA: policies, procedures, leave, schedules. I\'ll tell you which document my answer comes from.',
-  '- If something\'s wrong or you need a person, just tell me. I\'ll pass it privately to the right person on the team and they\'ll get back to you.',
+  '- If something\'s wrong or you need a person, just tell me. I\'ll pass it privately to the right person on the team.',
   '- If I\'m not sure about something, I\'ll ask the right person for you instead of guessing.',
   '- In a group space, @mention me. Please keep anything personal, especially about pay, to a direct message with me.',
 ].join('\n');
@@ -155,7 +155,7 @@ function handleMessage_(ev, messageKey) {
 
   // Passwords, codes and card or account numbers never go to the AI (it only needs to know one was shared).
   const safeText = redactCredentials_(text);
-  const decision = askClaude_({
+  const decision = askClaudeInLanguage_({
     text: safeText, user: user, ctx: ctx, knowledge: knowledge, tickets: tickets, history: history,
     team: teamNames_(),
   });
@@ -177,7 +177,7 @@ function handleMessage_(ev, messageKey) {
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
     ? statusReply_(user, which || 'NONE', !ev.isDm) : '';
-  let reply = composeReply_(decision, status, results);
+  let reply = composeReply_(decision, status, results, { inDm: ev.isDm });
 
   // Only cite documents this person was actually given.
   const titles = knowledge.docs.map(function (d) { return d.title; });
@@ -196,6 +196,7 @@ function handleMessage_(ev, messageKey) {
         (r.urgent ? ' urgent-safety' : '');
     }).join(', ') : '') +
       (cited.length ? ' | sources: ' + cited.join('; ') : '') +
+      (decision.languageRetried ? ' | language retry' : '') +
       (decision.usage ? ' | ' + decision.usage : '') });
   return reply + aiFooter_();
 }
@@ -217,8 +218,14 @@ const HANDOFF_CLAIMS = [
   // "This has been passed to ...", "It's been added to your concern", "It's now with the team"
   /\b(?:has|have|was|were|is|are)\s+(?:already\s+|now\s+)?(?:been\s+)?(?:passed|forwarded|escalated|flagged|shared|sent|reported|raised|referred|noted|logged|added|recorded|updated)\s+(?:on|along|to|with|for|in)\b/i,
   new RegExp('\\b(?:is|are)\\s+(?:now\\s+)?(?:with|in the hands of)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS, 'i'),
-  // "Ms. Cynthia will get back to you", "so someone on the team can check in with you"
-  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to|can)\\s+(?:get back|contact|reach out|follow up|look into|check in|check on|review|call you|message you|be in touch)', 'i'),
+  // "Ms. Cynthia will get back to you", "the team will look at it with you", "so someone on the team can check in with you"
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to|can)\\s+(?:also\\s+|then\\s+)?(?:get back|contact|reach out|follow up|look into|look at|look over|check in|check on|review|call you|message you|be in touch|talk|speak|discuss|go over|handle|take care|sort|resolve|fix|decide|approve|meet)', 'i'),
+  // "until the team has spoken with you", "after someone from our team has called you"
+  new RegExp('\\b(?:until|after|once|when)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS + '[^.!?]*\\b(?:has|have)\\s+(?:spoken|talked|contacted|reached|called|met|gotten back|got back|reviewed|looked|followed up)', 'i'),
+  // "The team has reviewed / resolved it", "Ms. Cynthia already looked at it"
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:has|have|already)\\s+(?:already\\s+)?(?:reviewed|resolved|approved|looked at|looked into|fixed|sorted|handled|decided|seen)\\b', 'i'),
+  // "Your concern is being reviewed"
+  /\b(?:is|are)\s+(?:now\s+|currently\s+)?being\s+(?:reviewed|looked into|looked at|handled|processed|checked|worked on)\b/i,
   // "Ms. Cynthia is reviewing it"
   /\b(?:is|are)\s+(?:now\s+|currently\s+|already\s+)?(?:reviewing|looking into|working on|checking on|handling)\b/i,
   // "I'll call emergency services for you" (it cannot)
@@ -238,7 +245,7 @@ const PAST_CLAIM = /\b(?:I'?ve|I have|we'?ve|already|naipasa|ipinasa|gipasa|na-?
 
 function isHandoffClaim_(sentence) {
   if (OFFER.test(sentence) && !PAST_CLAIM.test(sentence)) return false;
-  if (/\b(?:babalikan|kokontakin|tatawagan|mo-?contact|kontakon|tawgan|mobalik)\b/i.test(sentence) &&
+  if (/\b(?:babalikan|kokontakin|tatawagan|titingnan|titingin|aasikasuhin|aayusin|kakausapin|mo-?contact|kontakon|tawgan|mobalik|tan-awon|atimanon|sulbaron|istoryahon)\b/i.test(sentence) &&
     new RegExp('\\b' + TEAM_WORDS, 'i').test(sentence)) return true;
   return HANDOFF_CLAIMS.some(function (re) { return re.test(sentence); });
 }
@@ -255,6 +262,18 @@ function isPayrollNameLeak_(sentence) {
 function stripHandoffClaims_(text) {
   const sentences = String(text || '').split(/(?<=[.!?])(?<!\b(?:Ms|Mr|Mrs|Dr|Sr|Jr)\.)[ \t]+/);
   return sentences.filter(function (s) { return !isHandoffClaim_(s) && !isPayrollNameLeak_(s); }).join(' ').trim();
+}
+
+/** Removes the sentences for which test() is true, keeping paragraphs and bullet lines. */
+function removeSentences_(text, test) {
+  return String(text || '').split(/\n{2,}/).map(function (p) {
+    return p.split('\n').map(function (line) {
+      const bullet = (line.match(/^\s*(?:[-*•]|\d+[.)])\s+/) || [''])[0];
+      const body = line.slice(bullet.length).split(/(?<=[.!?])(?<!\b(?:Ms|Mr|Mrs|Dr|Sr|Jr)\.)[ \t]+/)
+        .filter(function (x) { return !test(x); }).join(' ').trim();
+      return body ? bullet + body : '';
+    }).filter(String).join('\n');
+  }).filter(String).join('\n\n');
 }
 
 /**
@@ -280,7 +299,11 @@ const EMERGENCY_TEXT = 'If you\'re in immediate danger, please contact your loca
  * the recorded status, who a concern went to (only once it reached the team), or an honest
  * note when saving or posting failed.
  */
-function composeReply_(decision, status, results) {
+// In a direct message the VA is already talking privately; advice to "message me privately" is removed.
+const MOVE_TO_PRIVATE = /\b(?:message me (?:directly|privately)|send me a (?:direct|private) message|direct message|private (?:chat|message)|DM me|privately with me|move (?:this|it) to (?:a )?private|i-?message mo (?:ako|ito sa akin) (?:nang )?(?:direkta|pribado)|sa private chat|private nga chat|pribado)\b/i;
+
+function composeReply_(decision, status, results, options) {
+  const inDm = !!(options && options.inDm);
   const team = teamNames_();
   const ops = team.OPERATIONS || 'our Operations team';
   const urgent = results.some(function (r) { return r.urgent; });
@@ -307,6 +330,7 @@ function composeReply_(decision, status, results) {
   // A plain status question is answered only from the Tickets sheet, never from the AI's wording.
   const statusOnly = decision.intent === 'STATUS_REQUEST' && status && !results.length;
   let own = statusOnly ? '' : cleanReply_(decision.reply);
+  if (inDm) own = removeSentences_(own, function (x) { return MOVE_TO_PRIVATE.test(x); });
   let placed = false;
   if (own.search(HANDOFF_MARKER) >= 0) {
     let first = true;

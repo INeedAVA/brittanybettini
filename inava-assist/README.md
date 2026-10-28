@@ -240,6 +240,8 @@ Do these **only when you decide to go live**. I won't do any of them without you
 | `CLAUDE_MODEL` | `claude-haiku-5-5` | Which Claude model answers. Haiku is the cheapest; `claude-sonnet-5-5` or `claude-opus-5-5` give better answers at higher cost. |
 | `CLAUDE_EFFORT` | `low` | `low` is fastest. `medium` gives more thorough answers but may need the slow-reply path more often. |
 | `CLAUDE_FALLBACKS` | `default` | `off` disables the automatic retry on another model when a request is declined |
+| `PAYROLL_CLOSERS` | (empty) | Exact Google accounts, comma-separated, that may close payroll tickets with `done INAVA-...` without being their assignee (for example the Operations Manager when the payroll handler is away). A short resolution note is required. It does not allow viewing payroll ticket details or changing their status otherwise. |
+| `POLICY_NOTES` | built-in leave note | Notes about known conflicts in the documents, sent to the AI. Set to `none` once HR has updated the handbook (check first with `reviewLeavePolicy`). |
 | `SHOW_SOURCES` | `off` | `on` adds "Source: <document>" under answers. Sources are always recorded in the Audit Log. |
 | `SHOW_AI_LABEL` | `off` | `on` adds "INAVA Assist · AI assistant" under every reply. Chat already shows an "App" label, and the welcome message says it's an AI. |
 
