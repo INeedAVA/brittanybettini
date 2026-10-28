@@ -127,3 +127,31 @@ function refreshKnowledgeBase() {
   });
   console.log('Knowledge base cache cleared.');
 }
+
+/**
+ * For HR's leave-policy update: run from the editor after the handbook is updated. Clears the
+ * cached documents, re-reads them, and logs every passage about leave notice, so you can confirm
+ * the new wording is what the bot now sees before removing the temporary note (Script Property
+ * POLICY_NOTES = none). Read-only: nothing is posted or changed.
+ */
+function reviewLeavePolicy() {
+  refreshKnowledgeBase();
+  resetMemo_();
+  const docs = listKnowledgeDocs_().filter(function (d) { return String(d.status).trim().toUpperCase() === 'APPROVED'; });
+  docs.forEach(function (d) {
+    const text = getDocText_(d.url);
+    if (!text) {
+      console.warn(d.title + ': could not be read.');
+      return;
+    }
+    const lines = text.split('\n');
+    const hits = [];
+    lines.forEach(function (line, i) {
+      if (/leave|time off/i.test(line) && /week|day|advance|before|notice|file/i.test(line)) {
+        hits.push(lines.slice(Math.max(0, i - 1), i + 3).join(' ').replace(/\s+/g, ' ').trim());
+      }
+    });
+    console.log('=== ' + d.title + ' (' + hits.length + ' passage(s)) ===\n' + (hits.join('\n---\n') || '(none)'));
+  });
+  console.log('Temporary note currently sent to the AI:\n' + (policyNotes_() || '(none: POLICY_NOTES is set to none)'));
+}

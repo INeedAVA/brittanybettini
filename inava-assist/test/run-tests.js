@@ -456,13 +456,13 @@ test('ticket commands: assignee can update, others cannot, and never in a space'
   r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'ticket ' + id));
   assert.match(r.text, /currently in progress/);
   r = env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'my tickets'));
-  assert.match(r.text, /with Cyn \(in progress\)/);
+  assert.match(r.text, /with Cyn from our Client Care team \(in progress\)/);
   assert.doesNotMatch(r.text, /INAVA-/);
   r = env.ctx.onMessage(dmEvent('cyn@inava.test', 'users/2', 'done ' + id + ' spoke to the client'));
   assert.match(r.text, /marked as done/);
   assert.strictEqual(ticketRows(env)[0].Status, 'Resolved');
   // Requester raised it by DM, so they are told it is resolved.
-  assert.ok(env.sent.chat.some((c) => c.url.indexOf('spaces/dm-u7/messages') >= 0 && /Cyn has marked what you raised with me as sorted/.test(c.body.text)));
+  assert.ok(env.sent.chat.some((c) => c.url.indexOf('spaces/dm-u7/messages') >= 0 && /Cyn from our Client Care team has marked what you raised with me as sorted/.test(c.body.text)));
   assert.strictEqual(env.sent.claude.length, before, 'commands never call Claude');
 });
 
@@ -698,10 +698,10 @@ test('Bisaya and Tagalog concerns are recorded word for word, reply in their lan
   let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?'));
   assert.strictEqual(r.text, 'Pasensya kaayo, kabalo ko nga lisod kana.\n\nGipasa na nako ni kay Cyn sa among Client Care team, ug siya ang mo-contact nimo.');
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Naiintindihan kita, nakakabahala talaga \'yan. Naipasa ko na ito sa Payroll.',
-    concerns: [concern({ category: 'PAYROLL', priority: 'URGENT', handoff: 'Ipinasa ko na ito kay Pat sa aming Payroll team.' })] }));
+    concerns: [concern({ category: 'PAYROLL', priority: 'URGENT', handoff: 'Ipinasa ko na ito sa aming Payroll Team.' })] }));
   r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Wala pa akong sahod for this cutoff, ₱8,500 dapat'));
   // The AI's own claim is removed from the caring part; the handoff is added after delivery.
-  assert.strictEqual(r.text, 'Naiintindihan kita, nakakabahala talaga \'yan.\n\nIpinasa ko na ito kay Pat sa aming Payroll team.');
+  assert.strictEqual(r.text, 'Naiintindihan kita, nakakabahala talaga \'yan.\n\nIpinasa ko na ito sa aming Payroll Team.');
   const rows = ticketRows(env);
   assert.strictEqual(rows[0].Summary, 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?');
   assert.strictEqual(rows[1].Summary, 'Wala pa akong sahod for this cutoff, [amount removed] dapat');
@@ -1125,21 +1125,25 @@ test('routing: each category names its designated contact and reaches the single
   env.sheet('Routing').slice(1).forEach((r) => { r[1] = names[r[0]]; r[2] = 'mabelle@inava.test'; });
   const expected = {
     CLIENT_CARE: 'Ms. Cynthia from our Client Care team', OPERATIONS: 'Ms. Mabelle from our Operations team',
-    RECRUITMENT_HR: 'Ms. Vergelyn from our HR team', PAYROLL: 'Ms. Vergelyn from our Payroll team',
+    RECRUITMENT_HR: 'Ms. Vergelyn from our HR team', PAYROLL: 'our Payroll Team',
   };
   Object.keys(expected).forEach((cat, i) => {
     claudeReturns(env, answer({ intent: 'CONCERN', reply: '', concerns: [concern({ category: cat })] }));
     const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Concern ' + i + ' about ' + cat + ' and $1,200.00'));
-    assert.strictEqual(r.text, 'I\'ve passed this to ' + expected[cat] + ', and they\'ll get back to you.');
+    assert.strictEqual(r.text, cat === 'PAYROLL' ? 'I\'ve forwarded your concern to our Payroll Team for review.'
+      : 'I\'ve passed this to ' + expected[cat] + ', and they\'ll get back to you.');
     assert.strictEqual(ticketRows(env)[i]['Assignee Email'], 'mabelle@inava.test');
     assert.strictEqual(ticketRows(env)[i].Category, cat);
   });
-  assert.match(env.sent.claude[0].body.messages.slice(-1)[0].content, /PAYROLL: Ms\. Vergelyn from our Payroll team/);
+  // Even with a person's name in the Payroll row, VAs (and the AI) only ever see "our Payroll Team".
+  assert.match(env.sent.claude[0].body.messages.slice(-1)[0].content, /PAYROLL: our Payroll Team(;|\n)/);
   assert.match(cardText(inboxPosts(env)[3]), /Concern: Concern 3 about PAYROLL and \[amount removed\]/);
-  // With no name in the Payroll row (the live sheet today), VAs hear "our Payroll team".
-  env.sheet('Routing').find((r) => r[0] === 'PAYROLL')[1] = '';
-  env.ctx.resetMemo_();
-  assert.strictEqual(env.ctx.teamNames_().PAYROLL, 'our Payroll team');
+  // With no name, or the generic label, in the Payroll row (the live sheet), the same.
+  ['', 'our Payroll Team'].forEach((v) => {
+    env.sheet('Routing').find((r) => r[0] === 'PAYROLL')[1] = v;
+    env.ctx.resetMemo_();
+    assert.strictEqual(env.ctx.teamNames_().PAYROLL, 'our Payroll Team');
+  });
   assert.ok(!JSON.stringify(env.sheet('Routing')).match(/britt/i), 'Boss Britt is never in routing');
 });
 
@@ -1170,6 +1174,87 @@ test('policy grounding: the leave notice conflict is sent with the documents, an
   env.props.POLICY_NOTES = 'none';
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How early do I file leave?'));
   assert.doesNotMatch(env.sent.claude[1].body.system[1].text, /policy_notes/);
+});
+
+test('payroll: handled internally by its assignee, but VAs only ever hear "our Payroll Team"', () => {
+  const env = withInbox(setupEnv());
+  // Internally assigned to Verge (payroll-cleared); the public label stays generic.
+  const pay = env.sheet('Routing').find((r) => r[0] === 'PAYROLL');
+  pay[1] = 'our Payroll Team'; pay[2] = 'verge@inava.test'; pay[4] = 'YES';
+  claudeReturns(env, answer({ intent: 'CONCERN',
+    reply: 'I\'m sorry your pay is late. Verge handles payroll, so she will sort it out. Please don\'t share bank details here.\n\n[HANDOFF]',
+    concerns: [concern({ category: 'PAYROLL', priority: 'HIGH', handoff: 'I\'ve passed this to Ms. Vergelyn, who handles payroll.' })] }));
+  let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Wala pa akong sahod ngayong cutoff'));
+  assert.strictEqual(r.text, 'I\'m sorry your pay is late. Please don\'t share bank details here.\n\n' +
+    'I\'ve forwarded your concern to our Payroll Team for review.');
+  const t = ticketRows(env)[0];
+  assert.strictEqual(t['Assignee Email'], 'verge@inava.test');
+  assert.strictEqual(t['Assignee Name'], 'our Payroll Team');
+  assert.match(cardText(inboxPosts(env)[0]), /^<font color="#D93025"><b>NEW CONCERN<\/b>/);
+
+  // Status, "my tickets", follow-up and the resolution note: never a name.
+  const id = t['Ticket ID'];
+  env.sheet('Tickets')[1][env.sheet('Tickets')[0].indexOf('Status')] = 'In Progress';
+  claudeReturns(env, answer({ intent: 'STATUS_REQUEST', reply: '', status_ticket: id }));
+  assert.strictEqual(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'update sa sahod ko?')).text, 'Our Payroll Team is working on it.');
+  assert.match(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'my tickets')).text, /with our Payroll Team \(in progress\)/);
+  claudeReturns(env, answer({ intent: 'FOLLOW_UP', reply: 'Thanks.', concerns: [concern({ category: 'PAYROLL', related_ticket: id, handoff: 'I\'ve let Verge know.' })] }));
+  assert.strictEqual(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'It was for Oct 15')).text, 'Thanks.\n\nI\'ve let our Payroll Team know about this update.');
+  // Verge (the internal assignee) can close it; the VA's note names only the team.
+  r = env.ctx.onMessage(dmEvent('verge@inava.test', 'users/4', 'done ' + id));
+  assert.match(r.text, /marked as done/);
+  const note = env.sent.chat.filter((c) => c.url.indexOf('dm-u6') >= 0).slice(-1)[0];
+  assert.match(note.body.text, /^Quick update: Our Payroll Team has marked/);
+  env.sent.chat.filter((c) => /dm-u6|spaces\/dm\//.test(c.url)).forEach((c) => assert.doesNotMatch(JSON.stringify(c.body), /Verg/));
+  // Non-payroll answers can still name people.
+  assert.strictEqual(env.ctx.cleanReply_('Ms. Vergelyn from HR can help with your leave.'), 'Ms. Vergelyn from HR can help with your leave.');
+});
+
+test('sensitive personal disclosure: generic card and sheet text, urgent notice kept, VA identifiable', () => {
+  const env = withInbox(setupEnv());
+  const words = 'Honestly I have been thinking about ending my life lately';
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'I\'m really glad you told me, and I\'m sorry you\'re carrying this.\n\n[HANDOFF]',
+    concerns: [concern({ category: 'RECRUITMENT_HR', priority: 'URGENT', urgent_safety: true, sensitive_personal: true,
+      concern_text: words, recommended_action: 'Vicky says she is thinking about ending her life.' })] }));
+  const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', words));
+  const generic = 'Sensitive personal safety concern. Please contact this VA privately as soon as possible.';
+  const t = ticketRows(env)[0];
+  assert.strictEqual(t.Summary, generic);
+  assert.strictEqual(t['Recommended Action'], 'Contact the VA privately as soon as possible.');
+  assert.strictEqual(t['Requester Email'], 'va@inava.test', 'the manager can identify and contact the VA');
+  assert.doesNotMatch(JSON.stringify(env.sheet('Tickets')) + JSON.stringify(env.sheet('Audit Log')), /ending my life|ending her life/);
+  const posts = inboxPosts(env);
+  // Same NEW CONCERN layout, generic concern line, then the urgent notice.
+  assert.strictEqual(cardText(posts[0]), '<font color="#D93025"><b>NEW CONCERN</b></font><br><br>Name: Vicky VA<br><br>' +
+    'Concern: ' + generic + '<br><br>When it\'s sorted, reply here: @Ask INAVA done ' + t['Ticket ID']);
+  assert.match(cardText(posts[1]), /URGENT: SAFETY CONCERN/);
+  assert.strictEqual(t['Urgent Notice'], 'Posted');
+  assert.match(r.text, /I've let Verge from our HR team know about this right away\.\n\nIf you're in immediate danger, please contact your local emergency services/);
+
+  // A follow-up on it stays generic too.
+  claudeReturns(env, answer({ intent: 'FOLLOW_UP', reply: 'Thank you for telling me.',
+    concerns: [concern({ category: 'RECRUITMENT_HR', related_ticket: t['Ticket ID'], sensitive_personal: false })] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'It got worse last night, I took some pills'));
+  assert.doesNotMatch(JSON.stringify(env.sheet('Tickets')), /pills/);
+  assert.match(cardText(inboxPosts(env).slice(-1)[0]), /UPDATE ON A CONCERN<\/b><\/font><br><br>Name: Vicky VA<br><br>Concern: Sensitive personal safety concern/);
+
+  // Non-sensitive concerns (even serious mistreatment) keep the VA's redacted words.
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: '', concerns: [concern({ priority: 'HIGH', sensitive_personal: false })] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client screams at me and my password is Tulip99'));
+  assert.match(cardText(inboxPosts(env).slice(-1)[0]), /Concern: My client screams at me and my password is \[removed\]/);
+});
+
+test('reviewLeavePolicy shows the leave passages and the temporary note, changing nothing', () => {
+  const env = setupEnv();
+  env.docs['doc1xxxxxxxxxxxxxxxxxxxxxx'] = 'Intro\nThe VA must file leave two (2) weeks before the leave date.\nOther text';
+  const logs = [];
+  env.ctx.console.log = (m) => logs.push(m);
+  const before = JSON.stringify(env.tabs);
+  env.ctx.reviewLeavePolicy();
+  assert.strictEqual(JSON.stringify(env.tabs), before);
+  assert.strictEqual(env.sent.chat.length + env.sent.claude.length, 0);
+  assert.ok(logs.some((l) => /=== VA Handbook \(1 passage/.test(l) && /two \(2\) weeks before/.test(l)));
+  assert.ok(logs.some((l) => /Temporary note currently sent to the AI:[^]*ten \(10\) business days/.test(l)));
 });
 
 let failed = 0;

@@ -243,10 +243,18 @@ function isHandoffClaim_(sentence) {
   return HANDOFF_CLAIMS.some(function (re) { return re.test(sentence); });
 }
 
-/** Removes claim sentences from one line of text, keeping everything else as written. */
+// Pay words in English, Tagalog and Bisaya. A sentence about pay that names a team member is
+// removed, so VAs never learn who handles payroll (they only hear "our Payroll Team").
+const PAY_WORDS = /\b(?:pay|paid|payroll|payslip|salary|salaries|wage|cut-?off|deductions?|sahod|sweldo|suweldo|swelduhan|nasweldohan|bayad|kinsenas)\b/i;
+
+function isPayrollNameLeak_(sentence) {
+  return PAY_WORDS.test(sentence) && namesTeamMember_(sentence);
+}
+
+/** Removes claim sentences (and payroll name leaks) from one line of text, keeping everything else as written. */
 function stripHandoffClaims_(text) {
   const sentences = String(text || '').split(/(?<=[.!?])(?<!\b(?:Ms|Mr|Mrs|Dr|Sr|Jr)\.)[ \t]+/);
-  return sentences.filter(function (s) { return !isHandoffClaim_(s); }).join(' ').trim();
+  return sentences.filter(function (s) { return !isHandoffClaim_(s) && !isPayrollNameLeak_(s); }).join(' ').trim();
 }
 
 /**

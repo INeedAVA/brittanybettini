@@ -10,14 +10,35 @@
 const DEFAULT_SLA_HOURS = { URGENT: 2, HIGH: 8, NORMAL: 24, LOW: 72 };
 
 /** How the AI names the team member for each category ("Ms. Cynthia from our Client Care team"). */
+/**
+ * The PUBLIC name VAs hear for each category. This is the only source of contact names in
+ * anything a VA sees (AI context, handoffs, status answers, "my tickets", resolution notes).
+ * The internal assignee is the Routing tab's Assignee Email, which VAs never see.
+ * Payroll is always "our Payroll Team", whatever the sheet says, so the person who handles
+ * pay is never identified to a VA.
+ */
 function teamNames_() {
   const names = {};
   Object.keys(CATEGORIES).forEach(function (cat) {
+    if (cat === 'PAYROLL') {
+      names[cat] = PAYROLL_PUBLIC_NAME;
+      return;
+    }
     const r = getRouting_(cat);
     const name = r ? displayName_(r.name) : '';
-    names[cat] = (name ? name + ' from ' : '') + 'our ' + TEAM_LABEL[cat] + ' team';
+    // A generic label in the sheet ("our Client Care team") is used as it is.
+    names[cat] = /^our\b/i.test(name) ? name : (name ? name + ' from ' : '') + 'our ' + TEAM_LABEL[cat] + ' team';
   });
   return names;
+}
+
+const PAYROLL_PUBLIC_NAME = 'our Payroll Team';
+
+/** First names of the people named in Routing (for keeping them out of payroll replies). */
+function teamMemberNames_() {
+  return readTable_(SHEETS.ROUTING).map(function (r) {
+    return displayName_(r['Assignee Name']).replace(/^(?:Ms|Mr|Mrs|Sir|Ma'?am)\.?\s+/i, '').split(' ')[0];
+  }).filter(function (n) { return n && !/^our$/i.test(n) && n.length > 2; });
 }
 
 // How each team is described to VAs ("Ms. Cynthia from our Client Care team").
@@ -190,9 +211,31 @@ function shortHash_(text) {
   return ('0000000' + h.toString(16)).slice(-8);
 }
 
+// Shown to the team, and stored, instead of the words of a highly sensitive personal disclosure.
+const SENSITIVE_TEXT = 'Sensitive personal safety concern. Please contact this VA privately as soon as possible.';
+
+/**
+ * The AI's handoff sentence, or the standard one when it gave none. For payroll, a sentence
+ * that names a person (or not the Payroll Team) is replaced, so who handles pay stays private.
+ */
+function safeHandoff_(category, text, isFollowUp) {
+  const h = String(text || '').trim();
+  if (!h) return defaultHandoff_(category, isFollowUp);
+  if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp);
+  return h;
+}
+
+function namesTeamMember_(text) {
+  return teamMemberNames_().some(function (n) { return new RegExp('\\b' + n + '\\b', 'i').test(text); }) ||
+    /\bMs\.?\s+[A-Z]/.test(text);
+}
+
 /** "I've passed this to Ms. Cynthia from our Client Care team, ..." when Claude gave none. */
 function defaultHandoff_(category, isFollowUp) {
   const who = teamNames_()[category] || 'the right person on our team';
+  if (category === 'PAYROLL') {
+    return isFollowUp ? 'I\'ve let ' + who + ' know about this update.' : 'I\'ve forwarded your concern to ' + who + ' for review.';
+  }
   return isFollowUp ? 'I\'ve let ' + who + ' know about this update.'
     : 'I\'ve passed this to ' + who + ', and they\'ll get back to you.';
 }
@@ -246,8 +289,11 @@ function escalateConcerns_(concerns, user, source) {
       const earlier = related ? null : ownResolved.filter(function (t) { return t.id.toUpperCase() === relatedId; })[0];
       const urgent = c.urgent_safety === true;
       try {
+        // A highly sensitive personal disclosure is never stored or shown in words: the team sees a
+        // generic line and contacts the VA privately. An update on such a concern is treated the same.
+        const sensitive = c.sensitive_personal === true || !!(related && related.summary === SENSITIVE_TEXT);
         if (related) {
-          const text = redactConcern_(c.category === 'PAYROLL' ? 'PAYROLL' : related.category,
+          const text = sensitive ? SENSITIVE_TEXT : redactConcern_(c.category === 'PAYROLL' ? 'PAYROLL' : related.category,
             concernTextFor_(c, source.message, valid.length));
           if (updated[related.id]) {
             // A second part of the same message about the same matter: one update, not two.
@@ -257,12 +303,12 @@ function escalateConcerns_(concerns, user, source) {
           updated[related.id] = true;
           const r = addFollowUp_(related, text, user, ref, urgent);
           results.push({ ticketId: related.id, category: related.category, isNew: false, saved: true, delivered: r,
-            handoff: String(c.handoff || '').trim() || defaultHandoff_(related.category, true), urgent: urgent });
+            handoff: safeHandoff_(related.category, c.handoff, true), urgent: urgent });
         } else {
-          const raw = concernTextFor_(c, source.message, valid.length);
+          const raw = sensitive ? SENSITIVE_TEXT : concernTextFor_(c, source.message, valid.length);
           const t = createTicket_(c, raw, user, source, ref, earlier);
           results.push({ ticketId: t.id, category: c.category, isNew: true, saved: true, delivered: t.delivered,
-            handoff: String(c.handoff || '').trim() || defaultHandoff_(c.category, false), urgent: urgent });
+            handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent });
         }
       } catch (e) {
         console.error('Could not record a concern: ' + e);
@@ -300,7 +346,8 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     source: source.isDm ? 'Direct message' : 'Space: ' + (source.spaceName || source.spaceId),
     sourceLink: source.link || '',
     summary: text || 'See source conversation.',
-    recommendedAction: redactConcern_(category, String(c.recommended_action || '').trim()),
+    recommendedAction: raw === SENSITIVE_TEXT ? 'Contact the VA privately as soon as possible.'
+      : redactConcern_(category, String(c.recommended_action || '').trim()),
     dueBy: new Date(now.getTime() + slaHours * 3600 * 1000),
     history: created,
     sourceRefs: ref ? [ref] : [],
@@ -617,7 +664,7 @@ function updateTicketStatus_(user, ticketId, statusWords, note) {
 
   if (status === 'Resolved' && ticket.source === 'Direct message') {
     try {
-      sendPrivateMessage_(ticket.requesterEmail, 'Quick update: ' + (ticket.assigneeName || 'the team').replace(/\s*\(.*\)\s*/g, ' ').trim() +
+      sendPrivateMessage_(ticket.requesterEmail, 'Quick update: ' + capitalise_(teamNames_()[ticket.category] || 'our team') +
         ' has marked what you raised with me as sorted. If anything is still not right, just tell me.');
     } catch (e) {
       console.warn('Could not tell requester about resolution: ' + e);
@@ -650,7 +697,7 @@ function describeMyTickets_(user) {
     if (lines.length) lines.push('');
     lines.push('Things I\'ve passed on for you:');
     raised.forEach(function (t) {
-      lines.push('- ' + formatTime_(t.created) + ': with ' + (t.assigneeName || 'the team').replace(/\s*\(.*\)\s*/g, ' ').trim() +
+      lines.push('- ' + formatTime_(t.created) + ': with ' + (teamNames_()[t.category] || 'our team') +
         ' (' + t.status.toLowerCase() + ')');
     });
   }
@@ -678,6 +725,10 @@ function recentTicketsFor_(email) {
   });
 }
 
+function capitalise_(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function shortDate_(date) {
   return date ? Utilities.formatDate(date, Session.getScriptTimeZone(), 'd MMM') : 'recently';
 }
@@ -688,7 +739,7 @@ function shortDate_(date) {
  */
 function statusLine_(t) {
   const who = teamNames_()[t.category] || 'our team';
-  const Who = who.charAt(0).toUpperCase() + who.slice(1);
+  const Who = capitalise_(who);
   switch (t.status) {
     case 'Assigned':
       return 'It\'s with ' + who + ' (passed on ' + shortDate_(t.created) + '). There\'s no update recorded from them yet.';
