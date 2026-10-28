@@ -251,8 +251,16 @@ function mentionFor_(email, name) {
 function postToTeam_(ticket, text) {
   const space = teamInbox_();
   if (!space) return false;
+  // If the handler (Assignee Email) is not the designated contact named to the VA
+  // (Assignee Name), e.g. Ms. Mabelle triages everything, say who was named.
+  const handler = findUser_(ticket.assigneeEmail);
+  const named = displayName_(ticket.assigneeName);
+  const designated = ticket.category && TEAM_LABEL[ticket.category] &&
+    (!named || !handler || handler.name.indexOf(named.replace(/^(Ms|Mr|Mrs)\.?\s+/, '')) < 0)
+    ? '\n\nDesignated contact told to the VA: ' + (named ? named + ' from ' : '') + 'our ' + TEAM_LABEL[ticket.category] + ' team'
+    : '';
   try {
-    postMessage_(space, 'For ' + mentionFor_(ticket.assigneeEmail, ticket.assigneeName) + ':\n\n' +
+    postMessage_(space, 'For ' + mentionFor_(ticket.assigneeEmail, ticket.assigneeName) + ':' + designated + '\n\n' +
       text.split(DONE_LINE).join('When it\'s sorted, reply here: @' + APP_NAME + ' done '));
     return true;
   } catch (e) {

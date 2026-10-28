@@ -585,7 +585,7 @@ const SYSTEM_PROMPT = [
   '- Also escalate when the person asks to speak to a human, when you are unsure, or when you could not answer something that matters to them.',
   '- Do not escalate greetings, thanks, simple questions you fully answered from the documents, or casual chat. When "escalate" is false, use category NONE.',
   '- Priority: URGENT for safety, legal, harassment, a client currently without service, or someone not paid at all; HIGH for an unhappy client or a time-sensitive problem; NORMAL for most concerns; LOW for minor requests.',
-  '- The team member for each category is listed in the request. When you escalate, say in "reply" who you passed it to, using exactly the name given, for example "I\'ve passed this to Ms. Cynthia from our Client Care team, who will get back to you." Refer to team members by name, not he or she. Do not promise a time.',
+  '- The team member for each category is listed in the request. When you escalate, tell the person who will follow up, using exactly the name given, for example "I\'ve let the team know, and Ms. Cynthia from our Client Care team will get back to you." Refer to team members by name, not he or she. Do not promise a time.',
   '- Their open concerns are listed in the request (for your use only; never show the IDs). When you escalate, decide: if this is about the same matter as one of them, put that ID in "duplicate_of_ticket" and say you have let the same person know about the update; if it is a different matter, put "NEW". Leave it empty only when they have no open concerns. Do not ask the person whether it is the same matter.',
   '- If the person tells you an earlier message was a separate issue, escalate it again with "duplicate_of_ticket" set to "NEW".',
   '- You may ask for missing details that would help the team member.',
@@ -1149,8 +1149,16 @@ function mentionFor_(email, name) {
 function postToTeam_(ticket, text) {
   const space = teamInbox_();
   if (!space) return false;
+  // If the handler (Assignee Email) is not the designated contact named to the VA
+  // (Assignee Name), e.g. Ms. Mabelle triages everything, say who was named.
+  const handler = findUser_(ticket.assigneeEmail);
+  const named = displayName_(ticket.assigneeName);
+  const designated = ticket.category && TEAM_LABEL[ticket.category] &&
+    (!named || !handler || handler.name.indexOf(named.replace(/^(Ms|Mr|Mrs)\.?\s+/, '')) < 0)
+    ? '\n\nDesignated contact told to the VA: ' + (named ? named + ' from ' : '') + 'our ' + TEAM_LABEL[ticket.category] + ' team'
+    : '';
   try {
-    postMessage_(space, 'For ' + mentionFor_(ticket.assigneeEmail, ticket.assigneeName) + ':\n\n' +
+    postMessage_(space, 'For ' + mentionFor_(ticket.assigneeEmail, ticket.assigneeName) + ':' + designated + '\n\n' +
       text.split(DONE_LINE).join('When it\'s sorted, reply here: @' + APP_NAME + ' done '));
     return true;
   } catch (e) {

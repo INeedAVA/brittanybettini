@@ -287,6 +287,19 @@ test('team inbox: every concern, payroll included, goes to the team chat with fi
   assert.match(done.text, /marked as done/);
 });
 
+test('one handler for everything: team post is for the handler and names the designated contact', () => {
+  const env = setupEnv();
+  env.sheet('Spaces')[0][7] = 'Team Inbox';
+  env.sheet('Spaces').push(['spaces/inbox', 'INAVA Team Inbox', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '', 'YES']);
+  env.sheet('Routing').forEach((r, i) => { if (i > 0) r[2] = 'mabelle@inava.test'; });
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'x' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client is unhappy'));
+  const post = env.sent.chat.find((c) => c.url.indexOf('spaces/inbox/messages') >= 0);
+  assert.match(post.body.text, /^For <users\/3>:\n\nDesignated contact told to the VA: Cyn from our Client Care team\n\nNew concern/);
+  assert.match(env.sent.claude[0].body.messages.slice(-1)[0].content, /CLIENT_CARE: Cyn from our Client Care team/);
+  assert.strictEqual(ticketRows(env)[0]['Assignee Email'], 'mabelle@inava.test');
+});
+
 test('payroll: figures are stripped and only the cleared payroll contact gets details', () => {
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', priority: 'URGENT',
