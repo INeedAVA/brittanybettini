@@ -590,8 +590,15 @@ const SYSTEM_PROMPT = [
   '- If the person tells you an earlier message was a separate issue, escalate it again with "duplicate_of_ticket" set to "NEW".',
   '- You may ask for missing details that would help the team member.',
   '',
+  'Tone: empathetic but firm',
+  '- Sound like a kind, experienced team lead who genuinely cares about the VAs, not a rulebook. Many VAs are far from the team and may be stressed, worried about pay, or nervous about a client.',
+  '- When someone shares a problem or a feeling, acknowledge it first in your own words, specifically and briefly (for example "That sounds really stressful, especially with your client waiting."). Then help. Skip this for simple factual questions.',
+  '- Be firm on what the policy says. State it clearly and plainly, without hedging, softening it into something it is not, or hinting that an exception might be made. Kindness is in how you say it, not in bending it. If the person is unhappy with a rule, say you understand, explain the reason if the documents give one, and point them to who can decide.',
+  '- Do not lecture, scold, or quote rule numbers at people. Do not over-apologise or gush. One warm sentence is better than three.',
+  '- End with something useful: the next step, what you have done for them, or a short encouragement when it fits.',
+  '',
   'Style',
-  '- Be warm, brief and practical, like a person chatting. Plain sentences, short paragraphs, and "- " bullet lists only when they really help. No headings, no tables, no * or _ formatting.',
+  '- Conversational and brief, like a person chatting. Plain sentences, short paragraphs, and "- " bullet lists only when they really help. No headings, no tables, no * or _ formatting. An occasional friendly emoji is fine; never in serious matters (harassment, pay problems, safety, discipline).',
   '- Reply in the language the person wrote in.',
   '- "concern_summary" and "recommended_action" are read only by the INAVA team member you pass it to: make them factual, in English, one to three sentences each, and refer to the person by name. Leave both empty when not escalating.',
 ].join('\n');
@@ -926,10 +933,6 @@ function sendPrivateMessage_(email, text) {
  */
 
 const DEFAULT_SLA_HOURS = { URGENT: 2, HIGH: 8, NORMAL: 24, LOW: 72 };
-// How often an overdue ticket's assignee is reminded, in hours.
-const REMINDER_EVERY_HOURS = { URGENT: 1, HIGH: 4, NORMAL: 8, LOW: 24 };
-// After this many reminders, the Operations contact is told as well.
-const ESCALATE_AFTER_REMINDERS = 2;
 
 /** How the AI names the team member for each category ("Ms. Cynthia from our Client Care team"). */
 function teamNames_() {
@@ -1326,50 +1329,38 @@ function describeTicket_(user, ticketId) {
 }
 
 /**
- * Time-driven job (add an hourly trigger for it under Triggers): reminds assignees about
- * overdue tickets and tells Operations when a ticket stays overdue.
+ * Daily check-in (add a daily trigger for it under Triggers). Posts ONE message
+ * in the team chat listing every concern that is still open, oldest first.
+ * Posts nothing when everything is done. Without a team chat, it goes to the
+ * Operations contact privately.
  */
 function checkOverdueTickets() {
   resetMemo_();
   const now = Date.now();
+  const open = readTickets_().filter(function (t) { return t.status !== 'Resolved'; })
+    .sort(function (a, b) { return a.created - b.created; });
+  if (!open.length) return;
+
+  const days = function (t) {
+    const d = Math.floor((now - t.created.getTime()) / 86400000);
+    return d <= 0 ? 'today' : d === 1 ? '1 day ago' : d + ' days ago';
+  };
+  const lines = open.map(function (t) {
+    // The sheet already stores payroll messages with figures removed.
+    const concern = t.summary.length > 140 ? t.summary.slice(0, 137) + '...' : t.summary;
+    return '- ' + (t.requesterName || t.requesterEmail) + ' (' + days(t) + '): ' + concern +
+      (t.status === 'Awaiting Response' ? ' [waiting on the VA]' : '') + '\n   ' + DONE_LINE + t.id;
+  });
+  const heading = 'Daily check-in: ' + open.length + (open.length === 1 ? ' concern' : ' concerns') + ' still open';
+  const text = heading + '\n\n' + lines.join('\n\n');
+
   const ops = getRouting_('OPERATIONS');
-  readTickets_().forEach(function (t) {
-    if (t.status === 'Resolved' || t.status === 'Awaiting Response') return;
-    if (!t.dueBy || t.dueBy.getTime() > now) return;
-    const every = (REMINDER_EVERY_HOURS[t.priority] || 8) * 3600 * 1000;
-    if (t.lastReminder && now - t.lastReminder.getTime() < every) return;
-
-    const hoursLate = Math.round((now - t.dueBy.getTime()) / 3600000);
-    const reminderFor = function (concern) {
-      return ['Reminder: still waiting for help', concernLines_(t, concern), DONE_LINE + t.id].join('\n\n');
-    };
-    let sent = false;
-    try {
-      // The sheet already stores payroll messages with figures removed.
-      sent = postToTeam_(t, reminderFor(t.summary)) || (t.assigneeEmail ? sendPrivateMessage_(t.assigneeEmail,
-        boldHeading_(reminderFor(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary))) : false);
-    } catch (e) {
-      console.error('Reminder for ' + t.id + ' failed: ' + e);
-    }
-    const reminders = t.remindersSent + 1;
-    updateObject_(SHEETS.TICKETS, t.row, { 'Reminders Sent': reminders, 'Last Reminder': new Date() });
-    appendHistory_(t, 'Overdue reminder #' + reminders + (sent ? ' sent' : ' could not be sent'));
-
-    // Tell Operations once: after repeated reminders, or straight away if the assignee can't be reached.
-    if ((reminders === ESCALATE_AFTER_REMINDERS || (!sent && reminders === 1)) && ops && ops.email && ops.email !== t.assigneeEmail) {
-      try {
-        const heads = function (concern) {
-          return ['Heads up: this is ' + hoursLate + 'h overdue with ' + (displayName_(t.assigneeName) || 'nobody yet'),
-            concernLines_(t, concern)].join('\n\n');
-        };
-        if (!postToTeam_({ id: t.id, assigneeEmail: ops.email, assigneeName: ops.name }, heads(t.summary))) {
-          sendPrivateMessage_(ops.email, boldHeading_(heads(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary)));
-        }
-        appendHistory_(t, 'Escalated to Operations (' + ops.email + ')');
-      } catch (e) {
-        console.error('Escalation for ' + t.id + ' failed: ' + e);
-      }
-    }
+  if (!postToTeam_({ id: 'daily check-in' }, text) && ops && ops.email) {
+    // Private fallback: no payroll wording beyond what the sheet stores, which is already redacted.
+    sendPrivateMessage_(ops.email, boldHeading_(text));
+  }
+  open.forEach(function (t) {
+    updateObject_(SHEETS.TICKETS, t.row, { 'Reminders Sent': t.remindersSent + 1, 'Last Reminder': new Date() });
   });
 }
 

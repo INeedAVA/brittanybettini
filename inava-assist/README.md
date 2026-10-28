@@ -32,7 +32,7 @@ list are kept in one Google Sheet that you control.
 | No duplicate tickets | If the same person raises the same open concern again, it's added to their existing ticket as a follow-up. |
 | Feels like a person | VAs never see ticket numbers or forms. The bot says things like "I've passed this to Cyn, who will get back to you." If it isn't sure of an answer, it asks the right person instead of guessing. |
 | Behind-the-scenes tracking | Each concern is quietly tracked in the sheet (New, Assigned, In Progress, Awaiting Response, Resolved), so reminders and duplicate checks work. Team members reply `done INAVA-…` in their chat with the bot when it's handled. |
-| Overdue reminders | An hourly job reminds the assignee about overdue tickets. If a ticket stays overdue, it tells Operations (Mabelle). |
+| Daily check-in | Once a day the bot posts one message in the Team Inbox listing every concern still open (nothing if all are done). New concerns are still posted straight away. |
 | Verified identity | Google tells the bot who sent each message, and senders can't fake this. Anyone not listed as Active in the Users tab gets no AI answers. |
 | Clearly an AI | Every reply ends with "INAVA Assist · AI assistant". It never speaks as Mabelle, Cyn, Verge or Boss Britt. |
 | Human approval for sensitive decisions | It cannot approve or deny leave, pay, refunds, contracts, hiring or discipline. It explains the policy and passes the decision to a person. |
@@ -120,9 +120,9 @@ the only account (besides you) that can open the control sheet and the knowledge
    **Review permissions**, choose your account, then **Allow**.
 3. Open the control sheet. It now has these tabs: Users, Spaces, Routing, Knowledge, Tickets,
    Audit Log.
-4. **Turn on the hourly reminders:** in Apps Script, click the **clock icon (Triggers) > Add
-   Trigger**. Choose function `checkOverdueTickets`, event source **Time-driven**, type **Hour
-   timer**, **Every hour**. Click **Save**.
+4. **Turn on the daily check-in:** in Apps Script, click the **clock icon (Triggers) > Add
+   Trigger**. Choose function `checkOverdueTickets`, event source **Time-driven**, type **Day
+   timer**, time **8am to 9am**. Click **Save**.
 
 ### Step 6: Connect Google Chat to the script
 1. In Apps Script, click **Deploy > Test deployments**. Copy the **Head Deployment ID**.

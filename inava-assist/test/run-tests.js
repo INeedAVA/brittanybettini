@@ -372,32 +372,38 @@ test('ticket commands: assignee can update, others cannot, and never in a space'
   assert.strictEqual(env.sent.claude.length, before, 'commands never call Claude');
 });
 
-test('overdue reminders: assignee reminded, Operations told after repeated reminders', () => {
+test('daily check-in: one message listing open concerns, nothing when all are done', () => {
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', priority: 'HIGH', concern_summary: 'x' }));
-  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'problem'));
-  const tickets = env.sheet('Tickets');
-  const h = tickets[0];
-  const row = tickets[1];
-  row[h.indexOf('Due By')] = toSerial(new Date(Date.now() - 3600 * 1000));
+  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'Client unhappy with the report'));
+  claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', concern_summary: 'x' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I was not paid $500'));
   const count = (s) => env.sent.chat.filter((c) => c.url.indexOf(s) >= 0).length;
-  const cynBefore = count('dm-cyn');
 
+  // No team chat: the check-in goes privately to Operations (Mabelle).
+  const before = count('dm-mabelle');
   env.ctx.checkOverdueTickets();
-  assert.strictEqual(count('dm-cyn'), cynBefore + 1);
-  env.ctx.checkOverdueTickets(); // too soon, no repeat
-  assert.strictEqual(count('dm-cyn'), cynBefore + 1);
-  assert.strictEqual(count('dm-mabelle'), 0);
+  assert.strictEqual(count('dm-mabelle'), before + 1);
+  const dm = env.sent.chat.filter((c) => c.url.indexOf('dm-mabelle') >= 0).slice(-1)[0].body.text;
+  assert.match(dm, /^\*\*DAILY CHECK-IN: 2 CONCERNS STILL OPEN\*\*/);
+  assert.match(dm, /Andy \(Acme VA\) \(today\): Client unhappy with the report/);
+  assert.match(dm, /Vicky VA \(today\): I was not paid \[amount removed\]/);
 
-  row[h.indexOf('Last Reminder')] = toSerial(new Date(Date.now() - 5 * 3600 * 1000));
+  // With a team chat: one card there, nothing private.
+  env.sheet('Spaces')[0][7] = 'Team Inbox';
+  env.sheet('Spaces').push(['spaces/inbox', 'INAVA Team Inbox', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '', 'YES']);
+  const dmBefore = count('dm-');
   env.ctx.checkOverdueTickets();
-  assert.strictEqual(count('dm-cyn'), cynBefore + 2);
-  assert.strictEqual(count('dm-mabelle'), 1);
+  assert.strictEqual(count('spaces/inbox/messages'), 1);
+  assert.strictEqual(count('dm-'), dmBefore);
+  assert.match(cardText(env.sent.chat.slice(-1)[0]), /DAILY CHECK-IN: 2 CONCERNS STILL OPEN/);
 
-  row[h.indexOf('Status')] = 'Resolved';
-  row[h.indexOf('Last Reminder')] = toSerial(new Date(Date.now() - 50 * 3600 * 1000));
+  // Everything done: no message at all.
+  const tickets = env.sheet('Tickets');
+  tickets.slice(1).forEach((r) => { r[tickets[0].indexOf('Status')] = 'Resolved'; });
+  const total = env.sent.chat.length;
   env.ctx.checkOverdueTickets();
-  assert.strictEqual(count('dm-cyn'), cynBefore + 2);
+  assert.strictEqual(env.sent.chat.length, total);
 });
 
 test('slow answer is posted through the Chat API instead of timing out', () => {
