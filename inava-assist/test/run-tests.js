@@ -112,6 +112,11 @@ function ticketRows(env) {
   return data.slice(1).map((r) => Object.fromEntries(h.map((k, i) => [k, r[i]])));
 }
 
+// The text of a card message posted to the team chat.
+function cardText(call) {
+  return call.body.cardsV2[0].card.sections[0].widgets[0].textParagraph.text;
+}
+
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
@@ -241,7 +246,7 @@ test('client care concern opens a ticket and privately notifies Cyn', () => {
   assert.strictEqual(t['Source Link'], 'https://chat.google.com/room/acme/abc');
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-cyn/messages') >= 0);
   assert.ok(dm, 'Cyn was messaged');
-  assert.match(dm.body.text, /^New concern\n\nName: Andy \(Acme VA\)\n\nConcern: My client is unhappy with response times\n\nPriority: High/);
+  assert.match(dm.body.text, /^\*\*NEW CONCERN\*\*\n\nName: Andy \(Acme VA\)\n\nConcern: My client is unhappy with response times\n\nConversation: https:\/\/chat.google.com\/room\/acme\/abc\n\nWhen it's sorted/);
   assert.match(dm.body.text, /When it's sorted, reply: done INAVA-\d{6}-001$/);
   assert.match(dm.body.text, /chat\.google\.com\/room\/acme\/abc/);
 });
@@ -278,16 +283,17 @@ test('team inbox: every concern, payroll included, goes to the team chat with fi
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I was not paid $1,250.00, my account is 1234 5678 90'));
   const posts = env.sent.chat.filter((c) => c.url.indexOf('spaces/inbox/messages') >= 0);
   assert.strictEqual(posts.length, 2);
-  assert.match(posts[0].body.text, /^For <users\/2>:\n\nNew concern\n\nName: Vicky VA\n\nConcern: My client is unhappy/);
-  assert.match(posts[0].body.text, /reply here: @Ask INAVA done INAVA-/);
-  assert.match(posts[1].body.text, /^For <users\/5>:[\s\S]*Concern: I was not paid \[amount removed\], my account is \[number removed\]/);
+  assert.match(cardText(posts[0]), /^<font color="#D93025"><b>NEW CONCERN<\/b><\/font><br><br>Name: Vicky VA<br><br>Concern: My client is unhappy/);
+  assert.match(cardText(posts[0]), /reply here: @Ask INAVA done INAVA-/);
+  assert.match(cardText(posts[1]), /Concern: I was not paid \[amount removed\], my account is \[number removed\]/);
+  assert.doesNotMatch(cardText(posts[0]), /For |Designated/);
   assert.ok(!env.sent.chat.some((c) => /dm-cyn|dm-pay/.test(c.url)), 'no private messages when the team chat is used');
   const id = ticketRows(env)[0]['Ticket ID'];
   const done = env.ctx.onMessage(spaceEvent('cyn@inava.test', 'users/2', 'spaces/inbox', 'done ' + id + ' sorted'));
   assert.match(done.text, /marked as done/);
 });
 
-test('one handler for everything: team post is for the handler and names the designated contact', () => {
+test('one handler for everything: the VA is told the designated contact, the handler gets it', () => {
   const env = setupEnv();
   env.sheet('Spaces')[0][7] = 'Team Inbox';
   env.sheet('Spaces').push(['spaces/inbox', 'INAVA Team Inbox', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '', 'YES']);
@@ -295,7 +301,7 @@ test('one handler for everything: team post is for the handler and names the des
   claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', concern_summary: 'x' }));
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client is unhappy'));
   const post = env.sent.chat.find((c) => c.url.indexOf('spaces/inbox/messages') >= 0);
-  assert.match(post.body.text, /^For <users\/3>:\n\nDesignated contact told to the VA: Cyn from our Client Care team\n\nNew concern/);
+  assert.match(cardText(post), /^<font color="#D93025"><b>NEW CONCERN<\/b>/);
   assert.match(env.sent.claude[0].body.messages.slice(-1)[0].content, /CLIENT_CARE: Cyn from our Client Care team/);
   assert.strictEqual(ticketRows(env)[0]['Assignee Email'], 'mabelle@inava.test');
 });
@@ -309,7 +315,7 @@ test('payroll: figures are stripped and only the cleared payroll contact gets de
   assert.doesNotMatch(t.Summary, /1,250|1234/);
   const dm = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-pay/messages') >= 0);
   assert.ok(dm);
-  assert.match(dm.body.text, /Name: Vicky VA\n\nConcern: I was not paid \$1,250\.00, my account is 1234 5678 90\n\nPriority: Urgent/);
+  assert.match(dm.body.text, /Name: Vicky VA\n\nConcern: I was not paid \$1,250\.00, my account is 1234 5678 90\n\nWhen it's sorted/);
   assert.ok(!env.sent.chat.some((c) => /dm-mabelle|dm-cyn|dm-verge/.test(c.url)));
 });
 
@@ -334,7 +340,7 @@ test('assignee without a DM space: ticket stays New and Operations is alerted', 
   assert.doesNotMatch(r.text, /INAVA-/);
   const alert = env.sent.chat.find((c) => c.url.indexOf('spaces/dm-mabelle/messages') >= 0);
   assert.ok(alert, 'Operations is told straight away');
-  assert.match(alert.body.text, /couldn't reach Cyn/);
+  assert.match(alert.body.text, /COULDN'T REACH CYN/);
 });
 
 test('ticket commands: assignee can update, others cannot, and never in a space', () => {

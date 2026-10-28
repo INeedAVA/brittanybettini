@@ -101,6 +101,26 @@ function postMessage_(spaceName, text, threadName) {
   return chatApi_('post', path, message);
 }
 
+/**
+ * Posts a simple card: a red, bold, all-caps heading, then the body text.
+ * (Plain text messages can't be coloured.)
+ */
+function postCard_(spaceName, heading, body) {
+  const esc = function (s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  };
+  return chatApi_('post', spaceName + '/messages', {
+    fallbackText: heading.toUpperCase(),
+    cardsV2: [{
+      cardId: 'concern',
+      card: { sections: [{ widgets: [{ textParagraph: {
+        text: '<font color="#D93025"><b>' + esc(heading.toUpperCase()) + '</b></font><br><br>' +
+          String(body).split('\n\n').map(esc).join('<br><br>'),
+      } }] }] },
+    }],
+  });
+}
+
 /** Finds the existing DM space between the app and a user ("users/123..."), or null. */
 function findDirectMessageSpace_(chatUserId) {
   const space = chatApi_('get', 'spaces:findDirectMessage?name=' + encodeURIComponent(chatUserId));

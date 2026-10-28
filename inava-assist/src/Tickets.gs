@@ -236,32 +236,25 @@ function teamInbox_() {
   return null;
 }
 
-/** A real @mention if we know the person's Chat ID, otherwise their name. */
-function mentionFor_(email, name) {
-  const user = email ? findUser_(email) : null;
-  if (user && user.chatUserId) return '<' + user.chatUserId + '>';
-  return displayName_(name) || email || 'team';
+/** "Heading\n\nbody" -> "**HEADING**\n\nbody" for plain-text private messages. */
+function boldHeading_(text) {
+  const i = text.indexOf('\n\n');
+  const heading = i < 0 ? text : text.slice(0, i);
+  return '**' + heading.toUpperCase() + '**' + (i < 0 ? '' : text.slice(i));
 }
 
 /**
- * Posts a message for the assignee in the team group chat, if one is set up.
- * Callers remove payroll figures first (see notifyAssignee_).
+ * Posts a message in the team group chat, if one is set up, as a card with a
+ * red heading (the text's first paragraph). Callers remove payroll figures first.
  * @return {boolean} true if posted
  */
 function postToTeam_(ticket, text) {
   const space = teamInbox_();
   if (!space) return false;
-  // If the handler (Assignee Email) is not the designated contact named to the VA
-  // (Assignee Name), e.g. Ms. Mabelle triages everything, say who was named.
-  const handler = findUser_(ticket.assigneeEmail);
-  const named = displayName_(ticket.assigneeName);
-  const designated = ticket.category && TEAM_LABEL[ticket.category] &&
-    (!named || !handler || handler.name.indexOf(named.replace(/^(Ms|Mr|Mrs)\.?\s+/, '')) < 0)
-    ? '\n\nDesignated contact told to the VA: ' + (named ? named + ' from ' : '') + 'our ' + TEAM_LABEL[ticket.category] + ' team'
-    : '';
+  const i = text.indexOf('\n\n');
   try {
-    postMessage_(space, 'For ' + mentionFor_(ticket.assigneeEmail, ticket.assigneeName) + ':' + designated + '\n\n' +
-      text.split(DONE_LINE).join('When it\'s sorted, reply here: @' + APP_NAME + ' done '));
+    postCard_(space, text.slice(0, i), text.slice(i + 2)
+      .split(DONE_LINE).join('When it\'s sorted, reply here: @' + APP_NAME + ' done '));
     return true;
   } catch (e) {
     console.error('Team chat post for ' + ticket.id + ' failed: ' + e);
@@ -269,12 +262,9 @@ function postToTeam_(ticket, text) {
   }
 }
 
-/** The Name / Concern / Priority block used in every message to the team. */
+/** The Name / Concern block used in every message to the team. (Priority is tracked, not shown.) */
 function concernLines_(ticket, concern) {
-  const p = String(ticket.priority || 'NORMAL');
-  return ['Name: ' + (ticket.requesterName || ticket.requesterEmail),
-    'Concern: ' + concern,
-    'Priority: ' + p.charAt(0) + p.slice(1).toLowerCase()].join('\n\n');
+  return ['Name: ' + (ticket.requesterName || ticket.requesterEmail), 'Concern: ' + concern].join('\n\n');
 }
 
 /** "Vicky Santos" -> "Vicky". */
@@ -313,8 +303,8 @@ function notifyAssignee_(ticket, message, isFollowUp) {
   for (let i = 0; i < recipients.length; i++) {
     if (!recipients[i]) continue;
     try {
-      if (sendPrivateMessage_(recipients[i], recipients[i] === ticket.assigneeEmail ? text
-        : '(Covering for ' + (displayName_(ticket.assigneeName) || ticket.assigneeEmail) + ')\n\n' + text)) return true;
+      if (sendPrivateMessage_(recipients[i], recipients[i] === ticket.assigneeEmail ? boldHeading_(text)
+        : '(Covering for ' + (displayName_(ticket.assigneeName) || ticket.assigneeEmail) + ')\n\n' + boldHeading_(text))) return true;
     } catch (e) {
       console.error('Notification to ' + recipients[i] + ' failed: ' + e);
     }
@@ -327,9 +317,9 @@ function alertOperations_(ticket, user) {
   const ops = getRouting_('OPERATIONS');
   if (!ops || !ops.email || ops.email === ticket.assigneeEmail) return;
   try {
-    sendPrivateMessage_(ops.email, ['New concern (I couldn\'t reach ' + (displayName_(ticket.assigneeName) || 'the right person') + ')',
+    sendPrivateMessage_(ops.email, boldHeading_(['New concern (I couldn\'t reach ' + (displayName_(ticket.assigneeName) || 'the right person') + ')',
       concernLines_(ticket, ticket.category === 'PAYROLL' ? 'Payroll matter (details are private)' : ticket.summary),
-      DONE_LINE + ticket.id].join('\n\n'));
+      DONE_LINE + ticket.id].join('\n\n')));
     appendHistory_(ticket, 'Assignee unreachable; Operations (' + ops.email + ') alerted');
   } catch (e) {
     console.error('Operations alert for ' + ticket.id + ' failed: ' + e);
@@ -439,7 +429,7 @@ function checkOverdueTickets() {
     try {
       // The sheet already stores payroll messages with figures removed.
       sent = postToTeam_(t, reminderFor(t.summary)) || (t.assigneeEmail ? sendPrivateMessage_(t.assigneeEmail,
-        reminderFor(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary)) : false);
+        boldHeading_(reminderFor(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary))) : false);
     } catch (e) {
       console.error('Reminder for ' + t.id + ' failed: ' + e);
     }
@@ -455,7 +445,7 @@ function checkOverdueTickets() {
             concernLines_(t, concern)].join('\n\n');
         };
         if (!postToTeam_({ id: t.id, assigneeEmail: ops.email, assigneeName: ops.name }, heads(t.summary))) {
-          sendPrivateMessage_(ops.email, heads(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary));
+          sendPrivateMessage_(ops.email, boldHeading_(heads(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary)));
         }
         appendHistory_(t, 'Escalated to Operations (' + ops.email + ')');
       } catch (e) {
