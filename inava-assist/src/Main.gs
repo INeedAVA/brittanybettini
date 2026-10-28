@@ -101,7 +101,7 @@ function handleMessage_(ev) {
     }
   }
 
-  const command = runCommand_(text, user, ev.isDm);
+  const command = runCommand_(text, user, ev.isDm || !!(space && space.teamInbox));
   if (command !== null) return command;
   if (!text) return WELCOME_TEXT;
 

@@ -57,6 +57,8 @@ function findSpace_(spaceId) {
         // An unset or unknown audience is treated as the most restrictive one.
         audience: ROLES.indexOf(audience) >= 0 ? audience : 'VA',
         clientAccount: lower_(r['Client Account']),
+        // The team's group chat, where new concerns are posted (Tickets.gs).
+        teamInbox: isYes_(r['Team Inbox']),
       };
     }
   }

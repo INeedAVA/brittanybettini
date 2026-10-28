@@ -264,6 +264,25 @@ test('Claude can mark a same-category concern as a separate ticket with NEW', ()
   assert.doesNotMatch(r.text, /INAVA-/);
 });
 
+test('team inbox: every concern, payroll included, goes to the team chat with figures removed', () => {
+  const env = setupEnv();
+  env.sheet('Spaces')[0][7] = 'Team Inbox';
+  env.sheet('Spaces').push(['spaces/inbox', 'INAVA Team Inbox', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '', 'YES']);
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE', priority: 'HIGH', concern_summary: 'x' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client is unhappy'));
+  claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', priority: 'URGENT', concern_summary: 'x' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I was not paid $1,250.00, my account is 1234 5678 90'));
+  const posts = env.sent.chat.filter((c) => c.url.indexOf('spaces/inbox/messages') >= 0);
+  assert.strictEqual(posts.length, 2);
+  assert.match(posts[0].body.text, /^For <users\/2>:\n\nNew concern\n\nName: Vicky VA\n\nConcern: My client is unhappy/);
+  assert.match(posts[0].body.text, /reply here: @Ask INAVA done INAVA-/);
+  assert.match(posts[1].body.text, /^For <users\/5>:[\s\S]*Concern: I was not paid \[amount removed\], my account is \[number removed\]/);
+  assert.ok(!env.sent.chat.some((c) => /dm-cyn|dm-pay/.test(c.url)), 'no private messages when the team chat is used');
+  const id = ticketRows(env)[0]['Ticket ID'];
+  const done = env.ctx.onMessage(spaceEvent('cyn@inava.test', 'users/2', 'spaces/inbox', 'done ' + id + ' sorted'));
+  assert.match(done.text, /marked as done/);
+});
+
 test('payroll: figures are stripped and only the cleared payroll contact gets details', () => {
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', priority: 'URGENT',

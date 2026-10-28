@@ -224,6 +224,42 @@ function findDuplicate_(decision, user, category) {
   return null;
 }
 
+const DONE_LINE = 'When it\'s sorted, reply: done ';
+
+/** The approved space marked Team Inbox = YES in the Spaces tab, or null. */
+function teamInbox_() {
+  const rows = readTable_(SHEETS.SPACES);
+  for (let i = 0; i < rows.length; i++) {
+    if (isYes_(rows[i]['Approved']) && isYes_(rows[i]['Team Inbox'])) return String(rows[i]['Space ID']).trim();
+  }
+  return null;
+}
+
+/** A real @mention if we know the person's Chat ID, otherwise their name. */
+function mentionFor_(email, name) {
+  const user = email ? findUser_(email) : null;
+  if (user && user.chatUserId) return '<' + user.chatUserId + '>';
+  return displayName_(name) || email || 'team';
+}
+
+/**
+ * Posts a message for the assignee in the team group chat, if one is set up.
+ * Callers remove payroll figures first (see notifyAssignee_).
+ * @return {boolean} true if posted
+ */
+function postToTeam_(ticket, text) {
+  const space = teamInbox_();
+  if (!space) return false;
+  try {
+    postMessage_(space, 'For ' + mentionFor_(ticket.assigneeEmail, ticket.assigneeName) + ':\n\n' +
+      text.split(DONE_LINE).join('When it\'s sorted, reply here: @' + APP_NAME + ' done '));
+    return true;
+  } catch (e) {
+    console.error('Team chat post for ' + ticket.id + ' failed: ' + e);
+    return false;
+  }
+}
+
 /** The Name / Concern / Priority block used in every message to the team. */
 function concernLines_(ticket, concern) {
   const p = String(ticket.priority || 'NORMAL');
@@ -254,8 +290,14 @@ function notifyAssignee_(ticket, message, isFollowUp) {
   const parts = [isFollowUp ? 'Update on a concern' : 'New concern'];
   parts.push(concernLines_(ticket, details));
   if (ticket.sourceLink) parts.push('Conversation: ' + ticket.sourceLink);
-  parts.push('When it\'s sorted, reply: done ' + ticket.id);
+  parts.push(DONE_LINE + ticket.id);
   const text = parts.join('\n\n');
+
+  // Everything goes to the team chat when one is set up. Payroll figures and account
+  // numbers are removed there, because everyone in the chat can read it.
+  const teamText = ticket.category === 'PAYROLL'
+    ? text.replace(details, function () { return redactSensitive_(message); }) : text;
+  if (postToTeam_(ticket, teamText)) return true;
 
   const recipients = [ticket.assigneeEmail];
   if (routing && routing.backupEmail) recipients.push(routing.backupEmail);
@@ -278,7 +320,7 @@ function alertOperations_(ticket, user) {
   try {
     sendPrivateMessage_(ops.email, ['New concern (I couldn\'t reach ' + (displayName_(ticket.assigneeName) || 'the right person') + ')',
       concernLines_(ticket, ticket.category === 'PAYROLL' ? 'Payroll matter (details are private)' : ticket.summary),
-      'When it\'s sorted, reply: done ' + ticket.id].join('\n\n'));
+      DONE_LINE + ticket.id].join('\n\n'));
     appendHistory_(ticket, 'Assignee unreachable; Operations (' + ops.email + ') alerted');
   } catch (e) {
     console.error('Operations alert for ' + ticket.id + ' failed: ' + e);
@@ -381,12 +423,14 @@ function checkOverdueTickets() {
     if (t.lastReminder && now - t.lastReminder.getTime() < every) return;
 
     const hoursLate = Math.round((now - t.dueBy.getTime()) / 3600000);
-    const text = ['Reminder: still waiting for help',
-      concernLines_(t, t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary),
-      'When it\'s sorted, reply: done ' + t.id].join('\n\n');
+    const reminderFor = function (concern) {
+      return ['Reminder: still waiting for help', concernLines_(t, concern), DONE_LINE + t.id].join('\n\n');
+    };
     let sent = false;
     try {
-      sent = t.assigneeEmail ? sendPrivateMessage_(t.assigneeEmail, text) : false;
+      // The sheet already stores payroll messages with figures removed.
+      sent = postToTeam_(t, reminderFor(t.summary)) || (t.assigneeEmail ? sendPrivateMessage_(t.assigneeEmail,
+        reminderFor(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary)) : false);
     } catch (e) {
       console.error('Reminder for ' + t.id + ' failed: ' + e);
     }
@@ -397,8 +441,13 @@ function checkOverdueTickets() {
     // Tell Operations once: after repeated reminders, or straight away if the assignee can't be reached.
     if ((reminders === ESCALATE_AFTER_REMINDERS || (!sent && reminders === 1)) && ops && ops.email && ops.email !== t.assigneeEmail) {
       try {
-        sendPrivateMessage_(ops.email, ['Heads up: this is ' + hoursLate + 'h overdue with ' + (displayName_(t.assigneeName) || 'nobody yet'),
-          concernLines_(t, t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary)].join('\n\n'));
+        const heads = function (concern) {
+          return ['Heads up: this is ' + hoursLate + 'h overdue with ' + (displayName_(t.assigneeName) || 'nobody yet'),
+            concernLines_(t, concern)].join('\n\n');
+        };
+        if (!postToTeam_({ id: t.id, assigneeEmail: ops.email, assigneeName: ops.name }, heads(t.summary))) {
+          sendPrivateMessage_(ops.email, heads(t.category === 'PAYROLL' ? 'Payroll matter (details are private)' : t.summary));
+        }
         appendHistory_(t, 'Escalated to Operations (' + ops.email + ')');
       } catch (e) {
         console.error('Escalation for ' + t.id + ' failed: ' + e);
