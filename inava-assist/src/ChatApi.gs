@@ -81,8 +81,26 @@ function chatApi_(method, path, body) {
   const code = resp.getResponseCode();
   const text = resp.getContentText();
   if (code === 404) return null;
+  // A message with this client-assigned ID was already posted (a retry): nothing new is posted.
+  if (code === 409) return { alreadyExists: true };
   if (code < 200 || code >= 300) throw new Error('Chat API ' + method + ' ' + path + ' failed (' + code + '): ' + text);
   return text ? JSON.parse(text) : {};
+}
+
+/**
+ * A Chat message ID we choose ourselves ("client-..."). Posting twice with the same ID posts
+ * only once, so a retried notification can never appear twice in the same space.
+ */
+function clientMessageId_(suffix) {
+  return ('client-' + String(suffix).toLowerCase().replace(/[^a-z0-9-]/g, '-')).slice(0, 63);
+}
+
+/** "spaces/X/messages" plus the query options. */
+function messagesPath_(spaceName, options) {
+  const query = [];
+  if (options.threadReply) query.push('messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD');
+  if (options.messageId) query.push('messageId=' + encodeURIComponent(options.messageId));
+  return spaceName + '/messages' + (query.length ? '?' + query.join('&') : '');
 }
 
 /**
@@ -90,26 +108,23 @@ function chatApi_(method, path, body) {
  * @param {string} spaceName e.g. "spaces/AAAA..."
  * @param {string} text Chat-formatted text
  * @param {string=} threadName reply in this thread when given
+ * @param {string=} messageId from clientMessageId_, so a retry never posts twice
  */
-function postMessage_(spaceName, text, threadName) {
-  let path = spaceName + '/messages';
+function postMessage_(spaceName, text, threadName, messageId) {
   const message = { text: text };
-  if (threadName) {
-    message.thread = { name: threadName };
-    path += '?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD';
-  }
-  return chatApi_('post', path, message);
+  if (threadName) message.thread = { name: threadName };
+  return chatApi_('post', messagesPath_(spaceName, { threadReply: !!threadName, messageId: messageId }), message);
 }
 
 /**
  * Posts a simple card: a red, bold, all-caps heading, then the body text.
  * (Plain text messages can't be coloured.)
  */
-function postCard_(spaceName, heading, body) {
+function postCard_(spaceName, heading, body, messageId) {
   const esc = function (s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
   };
-  return chatApi_('post', spaceName + '/messages', {
+  return chatApi_('post', messagesPath_(spaceName, { messageId: messageId }), {
     fallbackText: heading.toUpperCase(),
     cardsV2: [{
       cardId: 'concern',
@@ -132,7 +147,7 @@ function findDirectMessageSpace_(chatUserId) {
  * They must have messaged Ask INAVA at least once (Google requires the DM to exist).
  * @return {boolean} true if sent
  */
-function sendPrivateMessage_(email, text) {
+function sendPrivateMessage_(email, text, messageId) {
   const user = findUser_(email);
   if (!user) {
     console.warn('Cannot notify ' + email + ': not in the Users tab.');
@@ -147,6 +162,6 @@ function sendPrivateMessage_(email, text) {
     console.warn('Cannot notify ' + email + ': they have not messaged Ask INAVA yet.');
     return false;
   }
-  postMessage_(dmSpace, text);
+  postMessage_(dmSpace, text, null, messageId);
   return true;
 }

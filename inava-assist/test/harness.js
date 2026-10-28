@@ -26,6 +26,9 @@ function createEnv() {
   let nextSheetId = 1;
   const sheetIds = { Sheet1: 0 };
   let claudeHandler = () => { throw new Error('No Claude handler set'); };
+  // Chat API: messages posted with a client-assigned ID (per space), and an optional failure hook.
+  const chatIds = {};
+  let chatFail = null;
   let clockOffset = 0;
 
   function response(code, body) {
@@ -145,8 +148,16 @@ function createEnv() {
         }
         if (url.indexOf('chat.googleapis.com') >= 0) {
           const call = { url, method: opts.method, body: opts.payload ? JSON.parse(opts.payload) : null };
+          if (url.indexOf('findDirectMessage') >= 0) { sent.chat.push(call); return response(404, { error: 'not found' }); }
+          const failCode = chatFail && chatFail(url);
+          if (failCode) { sent.chatFailed = (sent.chatFailed || 0) + 1; return response(failCode, { error: 'unavailable' }); }
+          const id = (url.match(/[?&]messageId=([^&]+)/) || [])[1];
+          if (id) {
+            const key = url.split('/messages')[0] + '|' + id;
+            if (chatIds[key]) return response(409, { error: { status: 'ALREADY_EXISTS' } });
+            chatIds[key] = true;
+          }
           sent.chat.push(call);
-          if (url.indexOf('findDirectMessage') >= 0) return response(404, { error: 'not found' });
           return response(200, { name: 'spaces/x/messages/1' });
         }
         throw new Error('Unexpected fetch ' + url);
@@ -158,6 +169,8 @@ function createEnv() {
         const iso = d.toISOString();
         if (fmt === 'yyMMdd') return iso.slice(2, 4) + iso.slice(5, 7) + iso.slice(8, 10);
         if (fmt === 'yyyy-MM-dd HH:mm:ss') return iso.slice(0, 10) + ' ' + iso.slice(11, 19);
+        if (fmt === 'yyyy-MM-dd HH:mm') return iso.slice(0, 10) + ' ' + iso.slice(11, 16);
+        if (fmt === 'd MMM') return String(d.getUTCDate()) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
         if (fmt === 'u') return ctx.__weekday || '3';
         return iso;
       },
@@ -167,7 +180,7 @@ function createEnv() {
       computeRsaSha256Signature: (input, key) => [...crypto.sign('RSA-SHA256', Buffer.from(input), key)],
     },
     Session: { getScriptTimeZone: () => 'UTC' },
-    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, tryLock: () => true, releaseLock: () => {} }) },
   };
   vm.createContext(ctx);
 
@@ -198,7 +211,11 @@ function createEnv() {
     sent,
     tabs,
     setClaude: (fn) => { claudeHandler = fn; },
+    // fn(url) returns an HTTP error code to fail that Chat API call, or null to let it through.
+    setChatFail: (fn) => { chatFail = fn; },
     sheet: (name) => tabs[name],
+    // Evaluates an expression inside the script (top-level consts are not globals in the bundle).
+    get: (expr) => vm.runInContext(expr, ctx),
   };
 }
 

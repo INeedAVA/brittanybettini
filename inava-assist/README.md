@@ -121,8 +121,9 @@ the only account (besides you) that can open the control sheet and the knowledge
 3. Open the control sheet. It now has these tabs: Users, Spaces, Routing, Knowledge, Tickets,
    Audit Log.
 4. **Turn on the daily check-in:** in Apps Script, click the **clock icon (Triggers) > Add
-   Trigger**. Choose function `checkOverdueTickets`, event source **Time-driven**, type **Day
-   timer**, time **8am to 9am**. Click **Save**.
+   Trigger**. Choose function `dailyMorning`, event source **Time-driven**, type **Day
+   timer**, time **8am to 9am**. Click **Save**. (It skips weekends, posts the morning
+   briefing, re-sends any concern that did not reach the team chat, then posts the check-in.)
 
 ### Step 6: Connect Google Chat to the script
 1. In Apps Script, click **Deploy > Test deployments**. Copy the **Head Deployment ID**.
@@ -239,9 +240,31 @@ Do these **only when you decide to go live**. I won't do any of them without you
 | `CLAUDE_MODEL` | `claude-haiku-5-5` | Which Claude model answers. Haiku is the cheapest; `claude-sonnet-5-5` or `claude-opus-5-5` give better answers at higher cost. |
 | `CLAUDE_EFFORT` | `low` | `low` is fastest. `medium` gives more thorough answers but may need the slow-reply path more often. |
 | `CLAUDE_FALLBACKS` | `default` | `off` disables the automatic retry on another model when a request is declined |
-| `DEDUP_HOURS` | `24` | How long a new message in the same category counts as a follow-up |
 | `SHOW_SOURCES` | `off` | `on` adds "Source: <document>" under answers. Sources are always recorded in the Audit Log. |
 | `SHOW_AI_LABEL` | `off` | `on` adds "INAVA Assist · AI assistant" under every reply. Chat already shows an "App" label, and the welcome message says it's an AI. |
+
+## How concerns are recognised (Phase 1)
+
+- Every message is read as one of: question, casual chat, new concern, follow-up, status
+  question, or "needs a clarifying question". Only concerns and follow-ups create or update
+  tickets. English, Tagalog, Bisaya and mixed messages are all handled.
+- One message with several separate issues makes one ticket per issue.
+- A message updates an existing ticket only when it is clearly about the same matter and the
+  ticket belongs to the same person; otherwise it is a new concern. There is no time-based merge.
+- Status answers come from the Tickets tab, worded strictly from the recorded status
+  (nobody is said to be working on something unless it is In Progress).
+- "I've passed this to ..." is only said after the concern card has really been posted. If
+  posting fails, the ticket is saved with Delivery = Pending and re-sent later
+  (`retryUndeliveredConcerns`, also run after messages and by `dailyMorning`). Chat message IDs
+  make re-sending safe: the same card is never posted twice, and a re-delivered Chat event never
+  makes a second ticket (Source Message ID column).
+- Passwords, PINs, codes, card and account numbers are removed from everything stored or sent;
+  payroll figures are also removed in the team chat and the sheet.
+- A genuine safety risk (threats, self-harm, assault, medical emergency) gets one extra
+  "Urgent: safety concern" card after the normal concern card, and the VA is told to call 911
+  if in immediate danger. Nothing is decided automatically.
+- `runLanguageEval()` (Eval.gs) runs 26 made-up messages through the live model and writes the
+  results to an "Eval Results" tab, stopping before $0.20. Nothing is posted and no ticket is made.
 
 ## Security notes and recommendations
 

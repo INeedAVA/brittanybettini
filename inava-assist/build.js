@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ORDER = ['Config', 'Sheets', 'Access', 'Knowledge', 'Claude', 'ChatApi', 'Tickets', 'Briefing', 'Main', 'Setup'];
+const ORDER = ['Config', 'Sheets', 'Access', 'Knowledge', 'Claude', 'ChatApi', 'Tickets', 'Briefing', 'Main', 'Setup', 'Eval'];
 const src = path.join(__dirname, 'src');
 const files = fs.readdirSync(src).filter((f) => f.endsWith('.gs')).map((f) => f.slice(0, -3));
 const missing = files.filter((f) => ORDER.indexOf(f) < 0);

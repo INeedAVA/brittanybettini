@@ -19,16 +19,52 @@ function onMessage(event) {
   const ev = normalizeEvent_(event);
   if (!ev.message || (ev.message.sender && ev.message.sender.type === 'BOT')) return {};
 
+  // Google Chat can deliver the same message twice (for example after a timeout). Only the
+  // first delivery is handled; Tickets.gs also checks the sheet, so an expired claim is safe too.
+  const messageKey = String(ev.message.name || '');
+  if (messageKey && !claimMessage_(messageKey)) {
+    console.warn('Ignored a repeated delivery of ' + messageKey);
+    return {};
+  }
+
   let text;
   try {
-    text = handleMessage_(ev);
+    text = handleMessage_(ev, messageKey);
   } catch (e) {
     console.error('onMessage failed: ' + (e && e.stack ? e.stack : e));
     audit_({ email: ev.user.email, space: ev.space.name, action: 'ERROR', detail: String(e) });
     text = 'Sorry, something went wrong on my side and I could not answer. Please try again in a moment, ' +
       'or contact the INAVA team directly if it is urgent.' + aiFooter_();
   }
-  return deliver_(ev, text, started);
+  const response = deliver_(ev, text, started);
+  // Something saved earlier did not reach the team chat: try again now (never posts twice).
+  if (Date.now() - started < 20000 && CacheService.getScriptCache().get('pending_delivery')) {
+    try {
+      retryPending_();
+    } catch (e) {
+      console.error('Retry of undelivered concerns failed: ' + e);
+    }
+  }
+  return response;
+}
+
+/** True the first time a Chat message is seen (kept 6 hours). */
+function claimMessage_(messageKey) {
+  const cache = CacheService.getScriptCache();
+  const key = 'msg:' + messageKey.slice(-200);
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return !cache.get(key);
+  }
+  try {
+    if (cache.get(key)) return false;
+    cache.put(key, '1', 21600);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function onAddedToSpace(event) {
@@ -84,7 +120,7 @@ const HELP_TEXT = [
 ].join('\n');
 
 /** Does the work for one message and returns the reply text. */
-function handleMessage_(ev) {
+function handleMessage_(ev, messageKey) {
   const text = String(ev.message.argumentText || ev.message.text || '').trim();
   const user = findUser_(ev.user.email);
   if (!user || !user.active || !user.role) {
@@ -111,13 +147,14 @@ function handleMessage_(ev) {
     audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'KNOWLEDGE_TOO_LARGE',
       detail: 'Some approved documents were left out of this answer. Shorten or split the knowledge base.' });
   }
-  const openTickets = openTicketsFor_(user.email).map(function (t) {
-    return { id: t.id, category: t.category, status: t.status, summary: t.summary };
+  // Only the person's own concerns are ever looked up or shown to the AI.
+  const tickets = recentTicketsFor_(user.email).map(function (t) {
+    return { id: t.id, category: t.category, open: t.status !== 'Resolved', raised: shortDate_(t.created), summary: t.summary };
   });
   const history = loadHistory_(user.email, ev.space.name);
 
   const decision = askClaude_({
-    text: text, user: user, ctx: ctx, knowledge: knowledge, openTickets: openTickets, history: history,
+    text: text, user: user, ctx: ctx, knowledge: knowledge, tickets: tickets, history: history,
     team: teamNames_(),
   });
   if (decision.refused) {
@@ -125,7 +162,20 @@ function handleMessage_(ev) {
     return 'Sorry, I can\'t help with that one. If it\'s something the INAVA team should look at, just say "please pass this to someone" and I\'ll let the right person know.' + aiFooter_();
   }
 
-  let reply = String(decision.reply || '').trim();
+  // No ticket before a clarifying answer, and none for small talk.
+  const concerns = decision.intent === 'CLARIFY' || decision.intent === 'CASUAL' ? [] : decision.concerns;
+  const results = escalateConcerns_(concerns, user, {
+    spaceId: ev.space.name,
+    spaceName: ev.space.displayName,
+    isDm: ev.isDm,
+    link: ev.isDm ? '' : conversationLink_(ev),
+    message: text,
+    messageKey: messageKey,
+  });
+  const which = String(decision.status_ticket || '').trim();
+  const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
+    ? statusReply_(user, which || 'NONE', !ev.isDm) : '';
+  let reply = composeReply_(decision, status, results);
 
   // Only cite documents this person was actually given.
   const titles = knowledge.docs.map(function (d) { return d.title; });
@@ -135,25 +185,65 @@ function handleMessage_(ev) {
   // Sources are always recorded in the Audit Log; shown in Chat only if SHOW_SOURCES = on.
   if (cited.length && isOn_('SHOW_SOURCES')) reply += '\n\n_Source: ' + cited.join('; ') + '_';
 
-  let ticketId = '';
-  if (decision.escalate && CATEGORIES.hasOwnProperty(decision.category)) {
-    const result = handleEscalation_(decision, user, {
-      spaceId: ev.space.name,
-      spaceName: ev.space.displayName,
-      isDm: ev.isDm,
-      link: ev.isDm ? '' : conversationLink_(ev),
-      message: text,
-    });
-    // Tracked quietly: the person never sees ticket numbers.
-    ticketId = result.ticketId;
-  }
-
-  saveHistory_(user.email, ev.space.name, history, text, reply);
-  audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED', ticketId: ticketId,
-    detail: (decision.escalate ? decision.category + ' / ' + decision.priority : 'no escalation') +
+  // Passwords and codes are never kept, even in the 6-hour conversation memory.
+  saveHistory_(user.email, ev.space.name, history, redactCredentials_(text), reply);
+  audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED',
+    ticketId: results.map(function (r) { return r.ticketId; }).filter(String).join(' '),
+    detail: decision.intent + (results.length ? ' | ' + results.map(function (r) {
+      return r.category + (r.isNew ? ' new' : ' update') + (r.saved ? (r.delivered ? ' delivered' : ' NOT delivered') : ' NOT saved') +
+        (r.urgent ? ' urgent-safety' : '');
+    }).join(', ') : '') +
       (cited.length ? ' | sources: ' + cited.join('; ') : '') +
       (decision.usage ? ' | ' + decision.usage : '') });
   return reply + aiFooter_();
+}
+
+// Sentences claiming something was passed on or is being handled. Only the system says that,
+// and only after it has happened, so any such sentence from the AI is removed.
+const HANDOFF_CLAIM = new RegExp([
+  '\\b(?:I\'?ve|I have|I\'ll|I will|I\'m going to)\\s+(?:already\\s+|now\\s+)?(?:passed|pass|forwarded|forward|sent|send|escalated|escalate|let|told|tell|notified|notify|informed|inform|flagged|flag|raised|raise|shared)\\b[^.!?]*\\b(?:team|Ms\\.?|Mabelle|Cynthia|Vergelyn|Payroll|HR|Client Care|Operations|right person|someone|them|her|him)',
+  '\\b(?:is|are)\\s+(?:now\\s+|currently\\s+|already\\s+)?(?:reviewing|looking into|working on|checking on|handling)\\b',
+  '\\b(?:naipasa|ipinasa|naipaalam|ipinaalam|gipasa|gi-?forward|na-?forward|gipahibalo)\\s+(?:na\\s+)?(?:ko|nako)\\b',
+].join('|'), 'i');
+
+function stripHandoffClaims_(text) {
+  const sentences = String(text || '').split(/(?<=[.!?])(?<!\b(?:Ms|Mr|Mrs|Dr|Sr|Jr)\.)\s+/);
+  return sentences.filter(function (s) { return !HANDOFF_CLAIM.test(s); }).join(' ').replace(/ +\n/g, '\n').trim();
+}
+
+/**
+ * The reply the person sees: the AI's caring part, then facts the system can vouch for:
+ * the recorded status, who a concern went to (only once it reached the team), or an honest
+ * note when saving or posting failed.
+ */
+function composeReply_(decision, status, results) {
+  const team = teamNames_();
+  const parts = [];
+  // Paragraphs are kept apart: the claim filter works sentence by sentence inside each one.
+  const own = String(decision.reply || '').split(/\n{2,}/).map(stripHandoffClaims_).filter(String).join('\n\n');
+  if (own) parts.push(own);
+  if (status) parts.push(status);
+
+  const handoffs = [];
+  results.forEach(function (r) {
+    if (r.saved && r.delivered && r.handoff && handoffs.indexOf(r.handoff) < 0) handoffs.push(r.handoff);
+  });
+  if (handoffs.length) parts.push(handoffs.join(' '));
+  const urgent = results.some(function (r) { return r.urgent; });
+  const ops = team.OPERATIONS || 'our Operations team';
+  if (results.some(function (r) { return r.saved && !r.delivered; })) {
+    parts.push('I\'ve noted this, but I couldn\'t reach the team just now. I\'ll keep trying and make sure it gets to them.' +
+      (urgent ? ' Because this is urgent, please also contact ' + ops + ' directly.' : ''));
+  }
+  if (results.some(function (r) { return !r.saved; })) {
+    parts.push('Sorry, I couldn\'t record ' + (results.length > 1 ? 'all of this' : 'this') + ' just now because of a problem on my side, so ' +
+      (results.length > 1 ? 'some of it has' : 'it has') + ' not been passed on yet. Please send it again in a few minutes, or contact ' + ops + ' directly if it can\'t wait.');
+  }
+  if (urgent && !/\b911\b/.test(parts.join(' '))) {
+    parts.push('If you are in immediate danger, please get somewhere safe and call 911 (in the Philippines or the US) right away.');
+  }
+  if (!parts.length) parts.push('I\'m here. Tell me a bit more about what you need and I\'ll help.');
+  return parts.join('\n\n');
 }
 
 /** Returns reply text for a command, or null if the text is not a command. */

@@ -33,6 +33,7 @@ function setup() {
     if (current.join('') === '') writes.push({ range: quoteSheet_(d.name) + '!A1', values: [d.headers] });
   });
   if (writes.length) sheetsApi_('post', '/values:batchUpdate', { valueInputOption: 'RAW', data: writes });
+  defs.forEach(function (d) { ensureColumns_(d, true); });
 
   const requests = [];
   defs.forEach(function (d) {
@@ -89,7 +90,7 @@ function setup() {
 
   console.log('Setup complete. Control sheet: https://docs.google.com/spreadsheets/d/' + controlSheetId_());
   console.log('Share each knowledge document (or their folder) with ' + saEmail + ' as Viewer.');
-  console.log('Next: fill in the Routing, Users and Knowledge tabs, add the hourly trigger for checkOverdueTickets, then run checkSetup().');
+  console.log('Next: fill in the Routing, Users and Knowledge tabs, add a daily (weekday morning) trigger for dailyMorning, then run checkSetup().');
 }
 
 /** Logs a checklist of what is working and what still needs doing. */
@@ -157,7 +158,7 @@ function checkSetup() {
   });
 
   console.log(['Ask INAVA setup check', ''].concat(ok, todo.length ? [''].concat(todo) : ['', 'Everything is set up.'],
-    ['', 'Reminder: the hourly trigger for checkOverdueTickets is set under Triggers (clock icon).']).join('\n'));
+    ['', 'Reminder: the daily trigger for dailyMorning is set under Triggers (clock icon).']).join('\n'));
 }
 
 /**

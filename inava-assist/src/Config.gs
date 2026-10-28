@@ -11,7 +11,7 @@
  *   CONTROL_SHEET_ID      filled in automatically by setup()
  *
  * Optional Script Properties (defaults shown in DEFAULTS below):
- *   CLAUDE_MODEL, CLAUDE_EFFORT, CLAUDE_FALLBACKS, DEDUP_HOURS
+ *   CLAUDE_MODEL, CLAUDE_EFFORT, CLAUDE_FALLBACKS, SHOW_SOURCES, SHOW_AI_LABEL
  */
 
 const APP_NAME = 'Ask INAVA';
@@ -27,9 +27,6 @@ const DEFAULTS = {
   // 'default' lets Anthropic retry a safety-declined request on another model.
   // Set to 'off' to disable.
   CLAUDE_FALLBACKS: 'default',
-  // A new concern from the same person in the same category within this many
-  // hours is treated as a follow-up to their open ticket, not a new ticket.
-  DEDUP_HOURS: '24',
   // Show "Source: <document>" under answers ('on' / 'off').
   SHOW_SOURCES: 'off',
   // Show "Ask INAVA · AI assistant" under every reply ('on' / 'off').
@@ -95,7 +92,11 @@ const SHEETS = {
     name: 'Tickets',
     headers: ['Ticket ID', 'Status', 'Category', 'Priority', 'Assignee Name', 'Assignee Email',
       'Requester Name', 'Requester Email', 'Source', 'Source Link', 'Summary', 'Recommended Action',
-      'Created', 'Updated', 'Due By', 'Reminders Sent', 'Last Reminder', 'History'],
+      'Created', 'Updated', 'Due By', 'Reminders Sent', 'Last Reminder', 'History',
+      // Added in Phase 1 (ensureColumns_ adds them to an existing sheet): which chat messages a
+      // ticket came from (so a retried event never makes a second ticket), and whether the
+      // team chat has really received it (Pending tickets are re-sent safely).
+      'Source Message ID', 'Delivery', 'Delivery Attempts'],
   },
   AUDIT: {
     name: 'Audit Log',

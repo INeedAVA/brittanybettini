@@ -133,6 +133,38 @@ function updateObject_(def, rowNumber, fields) {
   sheetsApi_('post', '/values:batchUpdate', { valueInputOption: 'USER_ENTERED', data: data });
 }
 
+/** Creates the tab if the control sheet does not have it yet. */
+function ensureTab_(def) {
+  const meta = sheetsApi_('get', '?fields=sheets.properties(sheetId,title)');
+  const exists = meta.sheets.some(function (x) { return x.properties.title === def.name; });
+  if (!exists) sheetsApi_('post', ':batchUpdate', { requests: [{ addSheet: { properties: { title: def.name } } }] });
+}
+
+/**
+ * Adds any header in def.headers that the sheet's first row is missing (new columns go at the
+ * end, so existing data and older code are unaffected). Checked at most every 6 hours.
+ */
+function ensureColumns_(def, force) {
+  const cache = CacheService.getScriptCache();
+  const key = 'cols_ok:' + def.name + ':' + def.headers.length;
+  if (!force && cache.get(key)) return;
+  const resp = sheetsApi_('get', '/values/' + encodeURIComponent(quoteSheet_(def.name) + '!1:1'));
+  const have = ((resp.values && resp.values[0]) || []).map(String);
+  const prefixOk = have.every(function (h, i) { return i >= def.headers.length || h === def.headers[i]; });
+  if (!prefixOk) {
+    console.warn('The ' + def.name + ' tab has unexpected headers; not adding columns.');
+    return;
+  }
+  const missing = def.headers.slice(have.length);
+  if (missing.length) {
+    sheetsApi_('post', '/values:batchUpdate', { valueInputOption: 'RAW', data: [{
+      range: quoteSheet_(def.name) + '!' + columnLetter_(have.length + 1) + '1', values: [missing],
+    }] });
+    delete tableMemo_[def.name];
+  }
+  cache.put(key, '1', 21600);
+}
+
 function isYes_(value) {
   if (value === true) return true;
   const s = String(value || '').trim().toUpperCase();

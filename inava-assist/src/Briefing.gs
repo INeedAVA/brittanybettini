@@ -38,6 +38,12 @@ function dailyMorning() {
   } catch (e) {
     console.error('Morning briefing failed: ' + e);
   }
+  try {
+    // Concerns that were saved but never reached the team chat (does nothing when there are none).
+    retryUndeliveredConcerns();
+  } catch (e) {
+    console.error('Retry of undelivered concerns failed: ' + e);
+  }
   checkOverdueTickets();
 }
 
