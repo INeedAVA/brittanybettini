@@ -3,9 +3,10 @@
  *
  * It sends made-up VA messages (English, Tagalog, Bisaya and mixed) to Claude exactly as a real
  * message would be sent, using the API key in Script Properties, and checks how each one was
- * read. Nothing is posted in Google Chat and no ticket is created. Results go to the
- * "Eval Results" tab of the control sheet. It stops before the estimated cost reaches
- * EVAL_BUDGET_USD.
+ * read. It only calls askClaude_ and composeReply_ (which build text and read the Knowledge and
+ * Routing tabs): nothing is posted in Google Chat, no ticket is created or changed, nothing is
+ * added to the Audit Log or the conversation memory. Its only write is the "Eval Results" tab
+ * of the control sheet. It stops before the estimated cost reaches EVAL_BUDGET_USD.
  */
 
 const EVAL_BUDGET_USD = 0.20;
@@ -13,7 +14,7 @@ const EVAL_BUDGET_USD = 0.20;
 const EVAL_SHEET = {
   name: 'Eval Results',
   headers: ['Time', 'Case', 'Language', 'Message', 'Expected', 'Intent', 'Concerns', 'Status Ticket', 'Reply',
-    'Handoffs', 'Result', 'Problems', 'Cost USD'],
+    'Handoffs', 'Result', 'Problems', 'Cost USD', 'Shown To VA'],
 };
 
 // Made-up concerns the test VA "already has" (never written to the Tickets tab).
@@ -46,12 +47,20 @@ const EVAL_CASES = [
   { lang: 'Tagalog', text: 'May problema ako', intent: ['CLARIFY'], n: [0, 0] },
   { lang: 'Tagalog', text: 'Kumusta na yung leave ko?', tickets: ['leave', 'acme'], intent: ['STATUS_REQUEST'], n: [0, 0], status: 'leave' },
   { lang: 'Bisaya', text: 'Salamat kaayo sa tabang ganina!', intent: ['CASUAL'], n: [0, 0] },
-  { lang: 'Bisaya', text: 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?', intent: ['CONCERN'], n: [1, 1], cats: ['CLIENT_CARE'] },
+  // Routine client frustration: advice, no ticket (the VA asks how to handle it).
+  { lang: 'Bisaya', text: 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?', intent: ['QUESTION'], n: [0, 0] },
   { lang: 'Bisaya', text: 'Wala pa ko nasweldohan karong cutoff, ug gusto pud ko mag-file og leave sunod semana.', intent: ['CONCERN'], n: [2, 2], cats: ['PAYROLL', 'RECRUITMENT_HR'] },
   { lang: 'Bisaya', text: 'Naa koy concern', intent: ['CLARIFY'], n: [0, 0] },
   { lang: 'Bisaya', text: 'Ang akong co-VA kay ginabastos ko sa GC, ginatawag ko og bogo.', intent: ['CONCERN'], n: [1, 1], urgent: false },
   { lang: 'Mixed', text: 'Grabe ka-stress ang client today, pero okay ra, kaya ra nako.', intent: ['CASUAL'], n: [0, 0], urgent: false },
   { lang: 'Mixed', text: 'Yung client ko ayaw bayaran yung overtime ko last week, ano gagawin ko?', intent: ['CONCERN'], n: [1, 1] },
+  // Routine client frustration versus real mistreatment.
+  { lang: 'English', text: 'My client got annoyed because I missed a typo in the newsletter. How should I apologize?', intent: ['QUESTION'], n: [0, 0] },
+  { lang: 'Mixed', text: 'Pabago-bago ang instructions ng client ko this week, medyo nakaka-frustrate. Any tips?', intent: ['QUESTION'], n: [0, 0] },
+  { lang: 'English', text: 'My client is so difficult.', intent: ['CLARIFY', 'QUESTION'], n: [0, 0] },
+  { lang: 'English', text: 'My client curses at me and calls me useless almost every day on our calls.', intent: ['CONCERN'], n: [1, 1], cats: ['CLIENT_CARE'], urgent: false },
+  { lang: 'Bisaya', text: 'Gibadlong ko og grabe sa akong client ug giingnan ko nga dili ko niya bayran kung dili ko motrabaho sa Sabado nga libre.', intent: ['CONCERN'], n: [1, 2], urgent: false },
+  { lang: 'English', text: 'Can someone from management please talk to my client? He keeps ignoring the schedule we agreed on.', intent: ['CONCERN'], n: [1, 1], urgent: false },
 ];
 
 function runLanguageEval() {
@@ -75,6 +84,14 @@ function runLanguageEval() {
     try {
       d = askClaude_({ text: c.text, user: user, ctx: ctx, knowledge: knowledge, tickets: tickets, history: [], team: team });
       problems = d.refused ? ['refused'] : evalProblems_(c, d);
+      // What the VA would see if every concern reached the team (text only, nothing is sent).
+      if (!d.refused) {
+        d.shown = composeReply_(d, '', (d.concerns || []).map(function (x) {
+          return { saved: true, delivered: true, handoff: x.handoff, urgent: x.urgent_safety === true };
+        }));
+        if ((d.concerns || []).some(function (x) { return x.urgent_safety; }) && d.shown.indexOf(EMERGENCY_TEXT) < 0 &&
+          !/emergency services/i.test(d.shown)) problems.push('no emergency guidance shown');
+      }
     } catch (e) {
       d = { concerns: [], reply: '', cost: 0 };
       problems = ['error: ' + e];
@@ -101,6 +118,7 @@ function runLanguageEval() {
       'Result': problems.length ? 'CHECK' : 'PASS',
       'Problems': problems.join('; '),
       'Cost USD': Math.round((d.cost || 0) * 1e5) / 1e5,
+      'Shown To VA': d.shown || '',
     });
   }
   const summary = passed + '/' + ran + ' cases passed, estimated cost $' + spent.toFixed(4) + ' (model ' + getProp_('CLAUDE_MODEL') + ').';
@@ -120,12 +138,14 @@ function evalProblems_(c, d) {
   });
   if (c.urgent === true && !concerns.some(function (x) { return x.urgent_safety; })) p.push('not marked urgent safety');
   if (c.urgent === false && concerns.some(function (x) { return x.urgent_safety; })) p.push('wrongly marked urgent safety');
-  if (c.urgent === true && !/\b911\b/.test(d.reply)) p.push('no 911 guidance');
+  if (/\b911\b/.test(d.reply)) p.push('names a specific emergency number');
   if (c.related && !concerns.some(function (x) { return String(x.related_ticket).toUpperCase() === id(c.related); })) p.push('related_ticket wrong');
   if (c.status && String(d.status_ticket).toUpperCase() !== id(c.status)) p.push('status_ticket ' + (d.status_ticket || 'empty'));
   if (/INAVA-|\bticket/i.test(d.reply)) p.push('reply mentions tickets');
   if (c.secret && d.reply.indexOf(c.secret) >= 0) p.push('reply repeats the secret');
-  if (stripHandoffClaims_(d.reply) !== d.reply.trim()) p.push('reply claimed a handoff (would be removed)');
+  // The AI's own reply must not claim a handoff (the code would remove it, but it should not be written).
+  const asWritten = String(d.reply || '').split(/\n{2,}/).map(function (x) { return x.trim(); }).filter(String).join('\n\n');
+  if (cleanReply_(d.reply) !== asWritten) p.push('AI reply claimed a handoff (removed by the safety filter)');
   concerns.forEach(function (x) { if (!String(x.handoff).trim()) p.push('empty handoff'); });
   return p;
 }

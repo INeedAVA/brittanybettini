@@ -198,18 +198,51 @@ function handleMessage_(ev, messageKey) {
   return reply + aiFooter_();
 }
 
-// Sentences claiming something was passed on or is being handled. Only the system says that,
-// and only after it has happened, so any such sentence from the AI is removed.
-const HANDOFF_CLAIM = new RegExp([
-  '\\b(?:I\'?ve|I have|I\'ll|I will|I\'m going to)\\s+(?:already\\s+|now\\s+)?(?:passed|pass|forwarded|forward|sent|send|escalated|escalate|let|told|tell|notified|notify|informed|inform|flagged|flag|raised|raise|shared)\\b[^.!?]*\\b(?:team|Ms\\.?|Mabelle|Cynthia|Vergelyn|Payroll|HR|Client Care|Operations|right person|someone|them|her|him)',
-  '\\b(?:is|are)\\s+(?:now\\s+|currently\\s+|already\\s+)?(?:reviewing|looking into|working on|checking on|handling)\\b',
-  '\\b(?:naipasa|ipinasa|naipaalam|ipinaalam|gipasa|gi-?forward|na-?forward|gipahibalo)\\s+(?:na\\s+)?(?:ko|nako)\\b',
-].join('|'), 'i');
+// Sentences claiming something was (or will be) passed on, or promising that someone on the
+// team will act. Only the system says that, and only after the concern really reached the team,
+// so any such sentence written by the AI is removed. English, Tagalog and Bisaya.
+const TEAM_WORDS = '(?:team|Ms\\.?|Mabelle|Cynthia|Vergelyn|Payroll|HR|Client Care|Operations|management|right person|someone|a person|colleague)';
+const ME = '\\b(?:I\'?ve|I have|I\'ll|I will|I\'m going to|I am going to|I\'m|I am|let me|I just|I already)\\s+(?:also\\s+|already\\s+|now\\s+|just\\s+|gone ahead and\\s+)?';
+const HANDOFF_CLAIMS = [
+  // "I've passed this on", "I'll flag it", "I'm escalating this"
+  new RegExp(ME + '(?:pass(?:ed|ing)?|forward(?:ed|ing)?|escalat(?:e|ed|ing)|flag(?:ged|ging)?|refer(?:red|ring)?|loop(?:ed|ing)? (?:you |this |it )?in|rais(?:e|ed|ing)|report(?:ed|ing)?)\\b', 'i'),
+  // "I'll let the team know", "I've told Ms. Cynthia", "I'm sending this to HR"
+  new RegExp(ME + '(?:sen[dt]\\w*|let\\w*|told|tell\\w*|notif\\w*|inform\\w*|shar\\w*|alert\\w*|contact\\w*|reach\\w* out|messag\\w*|ping\\w*|ask\\w*)\\b[^.!?]*\\b' + TEAM_WORDS, 'i'),
+  // "This has been passed to ...", "It's now with the team"
+  /\b(?:has|have|was|were)\s+(?:already\s+)?been\s+(?:passed|forwarded|escalated|flagged|shared|sent|reported|raised|referred)\b/i,
+  new RegExp('\\b(?:is|are)\\s+(?:now\\s+)?(?:with|in the hands of)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS, 'i'),
+  // "Ms. Cynthia will get back to you", "so someone on the team can check in with you"
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to|can)\\s+(?:get back|contact|reach out|follow up|look into|check in|check on|review|call you|message you|be in touch)', 'i'),
+  // "Ms. Cynthia is reviewing it"
+  /\b(?:is|are)\s+(?:now\s+|currently\s+|already\s+)?(?:reviewing|looking into|working on|checking on|handling)\b/i,
+  // "I'll call emergency services for you" (it cannot)
+  /\bI(?:'ll| will|'ve| have|'m going to| am going to)\s+(?:also\s+)?(?:call|contact|alert|notify|send)\w*\b[^.!?]*\b(?:emergency|police|911|ambulance|authorities|barangay)/i,
+  // Tagalog / Bisaya: "Naipasa ko na", "Ipapaalam ko", "Gipasa na nako", "akong i-pasa"
+  /\b(?:naipasa|ipinasa|ipapasa|ipasa|i-pasa|gipasa|naipaabot|ipaabot|naipaalam|ipinaalam|ipapaalam|ipaalam|gipahibalo|ipahibalo|i-?forward|gi-?forward|na-?forward|ifo-?forward|i-?report|gi-?report|i-?escalate|gi-?escalate|na-?escalate)\b\W*(?:na\s+)?(?:ko|nako|namo|namin)\b/i,
+  /\bakong\s+(?:i-?pasa|i-?forward|i-?report|i-?escalate|ipahibalo|ipaabot)\b/i,
+];
+// Offers stay: "Would you like me to pass this to Ms. Cynthia?" (but not "I've passed it, okay?")
+const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo))\b/i;
+const PAST_CLAIM = /\b(?:I'?ve|I have|already|naipasa|ipinasa|gipasa|na-?forward|gi-?forward|naipaalam|gipahibalo)\b/i;
+
+function isHandoffClaim_(sentence) {
+  if (OFFER.test(sentence) && !PAST_CLAIM.test(sentence)) return false;
+  if (/\b(?:babalikan|kokontakin|tatawagan|mo-?contact|kontakon|tawgan|mobalik)\b/i.test(sentence) &&
+    new RegExp('\\b' + TEAM_WORDS, 'i').test(sentence)) return true;
+  return HANDOFF_CLAIMS.some(function (re) { return re.test(sentence); });
+}
 
 function stripHandoffClaims_(text) {
   const sentences = String(text || '').split(/(?<=[.!?])(?<!\b(?:Ms|Mr|Mrs|Dr|Sr|Jr)\.)\s+/);
-  return sentences.filter(function (s) { return !HANDOFF_CLAIM.test(s); }).join(' ').replace(/ +\n/g, '\n').trim();
+  return sentences.filter(function (s) { return !isHandoffClaim_(s); }).join(' ').replace(/ +\n/g, '\n').trim();
 }
+
+/** The AI's reply with every handoff claim removed, paragraph by paragraph. */
+function cleanReply_(text) {
+  return String(text || '').split(/\n{2,}/).map(stripHandoffClaims_).filter(String).join('\n\n');
+}
+
+const EMERGENCY_TEXT = 'If you\'re in immediate danger, please contact your local emergency services or seek immediate help from someone nearby.';
 
 /**
  * The reply the person sees: the AI's caring part, then facts the system can vouch for:
@@ -220,7 +253,7 @@ function composeReply_(decision, status, results) {
   const team = teamNames_();
   const parts = [];
   // Paragraphs are kept apart: the claim filter works sentence by sentence inside each one.
-  const own = String(decision.reply || '').split(/\n{2,}/).map(stripHandoffClaims_).filter(String).join('\n\n');
+  const own = cleanReply_(decision.reply);
   if (own) parts.push(own);
   if (status) parts.push(status);
 
@@ -239,8 +272,8 @@ function composeReply_(decision, status, results) {
     parts.push('Sorry, I couldn\'t record ' + (results.length > 1 ? 'all of this' : 'this') + ' just now because of a problem on my side, so ' +
       (results.length > 1 ? 'some of it has' : 'it has') + ' not been passed on yet. Please send it again in a few minutes, or contact ' + ops + ' directly if it can\'t wait.');
   }
-  if (urgent && !/\b911\b/.test(parts.join(' '))) {
-    parts.push('If you are in immediate danger, please get somewhere safe and call 911 (in the Philippines or the US) right away.');
+  if (urgent && !/emergency services/i.test(parts.join(' '))) {
+    parts.push(EMERGENCY_TEXT);
   }
   if (!parts.length) parts.push('I\'m here. Tell me a bit more about what you need and I\'ll help.');
   return parts.join('\n\n');

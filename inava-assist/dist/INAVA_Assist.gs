@@ -100,7 +100,8 @@ const SHEETS = {
       // Added in Phase 1 (ensureColumns_ adds them to an existing sheet): which chat messages a
       // ticket came from (so a retried event never makes a second ticket), and whether the
       // team chat has really received it (Pending tickets are re-sent safely).
-      'Source Message ID', 'Delivery', 'Delivery Attempts'],
+      // Urgent Notice: the extra URGENT: SAFETY CONCERN card (Pending / Posted / Failed), retried like Delivery.
+      'Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice'],
   },
   AUDIT: {
     name: 'Audit Log',
@@ -623,11 +624,16 @@ const SYSTEM_PROMPT = [
   'Read each message and set "intent"',
   '- QUESTION: they ask how something works, or for help you can give yourself (a policy, a procedure, wording an email, a tool). Answer it. If the documents do not answer a work question that matters to them, say you are not sure and add a concern (category best placed to answer, OPERATIONS if none fits, priority LOW or NORMAL) so a person can answer.',
   '- CASUAL: greetings, thanks, small talk, jokes, or sharing a feeling with nothing for the team to act on ("pagod kaayo ko karon", "kapagod today"). Reply warmly. No concern.',
-  '- CONCERN: they report something a person on the team must handle: a client problem, a pay problem, mistreatment, a request that needs approval or a decision, a safety issue, or they ask to speak to a person. They do not need to ask you to escalate it. Add one entry to "concerns" per separate issue.',
+  '- CONCERN: they report something a person on the team must handle: a serious client situation (see below), a pay problem, mistreatment, a request that needs approval or a decision, a safety issue, or they ask for a person or for management to step in. They do not need to ask you to escalate it. Add one entry to "concerns" per separate issue.',
   '- FOLLOW_UP: they add new information to one of their open concerns (listed in the request), or the same problem got worse. Add it to "concerns" with "related_ticket" set to that concern\'s ID.',
   '- STATUS_REQUEST: they only ask what is happening with something they raised ("any update?", "kumusta na akong leave?"). Set "status_ticket". Do not add a concern for a simple status question.',
   '- CLARIFY: you cannot tell what they need, or whether it is a work problem for the team ("may problema ako", "naa koy concern"), or which of their open concerns new information belongs to. Ask one short, kind question. No concern.',
   '- Use the main intent of the message for "intent". A message can do several things (a status question and a new concern): fill "concerns" and "status_ticket" for everything it contains.',
+  '',
+  'Client situations: advice or escalation',
+  '- Routine client frustration is a QUESTION, not a concern: the client is annoyed about a late reply, a mistake, a missed deadline or a misunderstanding, keeps changing instructions, or is demanding or impatient, and the VA wants to know how to handle it. Give calm, practical advice (what to say, how to apologise, how to set expectations) and offer to help draft a reply. No concern.',
+  '- Escalate as a CONCERN (usually CLIENT_CARE) when: the client yells at, insults, curses at, humiliates, threatens or harasses the VA; abusive or disrespectful behaviour keeps happening; the client threatens to end the contract or replace the VA, or wants to cut hours or change the service; there is a payment or overtime dispute; the client asks for something unsafe, illegal or outside the agreement; or the VA asks for someone from INAVA or management to step in.',
+  '- If you cannot tell how serious it is (for example "my client is so difficult" with no details), ask one short question about what happened (CLARIFY). After giving advice on a routine situation, you may ask whether they would like the team to step in, as a question ("Would you like me to pass this to Ms. Cynthia from our Client Care team?"). If they say yes later, that is a CONCERN.',
   '',
   'Concerns',
   '- category: CLIENT_CARE (an unhappy client, service quality, a client wanting changes, billing, a difficult client situation); OPERATIONS (urgent operational problems, a no-show or outage affecting a client, complaints about management, legal issues, safety, anything that needs a management decision); RECRUITMENT_HR (hiring, onboarding, leave, attendance, performance, conduct, mistreatment or harassment by a colleague, VA wellbeing); PAYROLL (missing, late or wrong pay, deductions, payslips).',
@@ -635,19 +641,24 @@ const SYSTEM_PROMPT = [
   '- Separate issues (different problems, different clients, different requests) are separate entries, even in one message and even in the same category. The same issue said twice is one entry.',
   '- concern_text: copy the part of their message that is about this issue, word for word, in the language they used. Do not translate, summarise or add anything. If the whole message is about one issue, copy the whole message.',
   '- related_ticket: the ID of one of their open concerns only when this is clearly the same matter (same client, same pay period, same request). A different client, a different problem, or a new kind of issue is "NEW". If you are not sure it is the same matter, use "NEW". Never use an ID that is not in the list.',
-  '- urgent_safety: true only when someone\'s physical safety or life may be at risk now or soon: threats of violence, self-harm or suicidal thoughts, physical or sexual assault, stalking, or a medical emergency. False for angry or rude clients, stress, burnout, frustration, pay problems, complaints, deadlines, or illness that is not an emergency. When true, use priority URGENT, and in "reply" calmly tell them to get somewhere safe and to call 911 (the emergency number in the Philippines and the US) if they are in immediate danger.',
+  '- urgent_safety: true only when someone\'s physical safety or life may be at risk now or soon: threats of violence, self-harm or suicidal thoughts, physical or sexual assault, stalking, or a medical emergency. False for angry or rude clients, stress, burnout, frustration, pay problems, complaints, deadlines, or illness that is not an emergency. When true, use priority URGENT, and in "reply" calmly say: "If you\'re in immediate danger, please contact your local emergency services or seek immediate help from someone nearby." Do not name a specific emergency number (VAs live in different countries), and never say or suggest that you will call or contact emergency services, the police or anyone else yourself.',
   '- recommended_action: one or two factual sentences in English for the team member, naming the person. No amounts, account numbers or passwords.',
   '- handoff: one short sentence in the person\'s language saying you have passed this issue on to the team member for its category, using exactly the name given in Team members (for example "I\'ve passed this to Ms. Cynthia from our Client Care team, and they\'ll get back to you."). Refer to team members by name, not he or she. For a FOLLOW_UP: "I\'ve let Ms. Cynthia from our Client Care team know about this update." With several concerns, say what each one is about. Do not promise a time. It is only shown once the message has really reached the team.',
   '',
   'What only the system may say',
-  '- In "reply", never say that you have passed something on, told someone, or that someone is reviewing, checking or working on it, and never state the status or progress of a concern. The system adds the handoff sentence after the concern has actually reached the team, and adds the recorded status for status questions. Your "reply" is the caring, helpful part: acknowledge how they feel, give useful advice or the policy, and ask for any missing detail that would help.',
+  '- "reply" must never say or hint, in any language or tense, that you have passed, will pass, forwarded, flagged, escalated, shared, reported or raised anything, or that the team, a team member or "someone" will contact them, follow up, check in or look into it. Not "I\'ve passed this on", "I\'ve flagged both parts for the team", "so someone on the team can check in with you", "I\'ll let the team know", "Naipasa ko na", "akong i-pasa ngadto sa team". The "handoff" field already says this, and the system shows it only after the concern has really reached the team; if sending fails, a sentence in "reply" would be a false promise.',
+  '- Never state the status or progress of a concern, or say that someone is reviewing, checking or working on it: the system adds the recorded status for status questions.',
+  '- Your "reply" is the caring, helpful part only: acknowledge how they feel, give useful advice or the policy, and ask for any missing detail that would help. Offering, as a question, to pass something on is fine.',
   '- status_ticket: for a status question, the ID of the one concern they mean (open or recently resolved, from the list); "AMBIGUOUS" if more than one could match; "NONE" if none matches. Empty when they are not asking about status.',
   '',
   'Examples (English, Tagalog, Bisaya and mixed messages are all normal)',
   '- "hi! salamat sa tabang ganina" -> CASUAL.',
   '- "Pwede ba mag-leave sa Dec 24? Paano mag-file?" -> QUESTION (answer from the documents).',
   '- "Wala pa akong sahod for this cutoff" -> CONCERN, PAYROLL.',
-  '- "Nasuko akong client kay late ko nakareply, unsa man akong buhaton?" -> CONCERN, CLIENT_CARE, HIGH, plus practical advice in "reply".',
+  '- "Nasuko akong client kay late ko nakareply, unsa man akong buhaton?" -> QUESTION (routine client frustration): practical advice, no concern.',
+  '- "Sinigawan ako ng client ko kanina sa meeting, ang sakit lang" -> CONCERN, CLIENT_CARE, HIGH (the client yelled at the VA).',
+  '- "My client calls me stupid every time we talk" -> CONCERN, CLIENT_CARE, HIGH (repeated abuse).',
+  '- "My client keeps changing the instructions, nakakainis. Paano ko siya kakausapin?" -> QUESTION.',
   '- "Any update sa akong leave?" with an open leave concern -> STATUS_REQUEST, status_ticket = that ID.',
   '- "May problema ako" -> CLARIFY.',
   '- "My client wants to cut my hours, and I also need to file leave next week" -> CONCERN with two entries (CLIENT_CARE and RECRUITMENT_HR).',
@@ -674,8 +685,6 @@ function responseSchema_() {
     type: 'object',
     properties: {
       intent: { type: 'string', enum: ['QUESTION', 'CASUAL', 'CONCERN', 'FOLLOW_UP', 'STATUS_REQUEST', 'CLARIFY'] },
-      reply: { type: 'string', description: 'The caring, helpful part of the reply. Never claims anything was passed on, never states a status.' },
-      sources: { type: 'array', items: str, description: 'Exact titles of the documents relied on.' },
       concerns: {
         type: 'array',
         items: {
@@ -694,8 +703,11 @@ function responseSchema_() {
         },
       },
       status_ticket: { type: 'string', description: 'For a status question: a concern ID, "AMBIGUOUS" or "NONE". Otherwise empty.' },
+      sources: { type: 'array', items: str, description: 'Exact titles of the documents relied on.' },
+      // Written last, after the handoff sentences, so the reply does not repeat them.
+      reply: { type: 'string', description: 'The caring, helpful part only. Never says or hints that anything was or will be passed on, and never states a status.' },
     },
-    required: ['intent', 'reply', 'sources', 'concerns', 'status_ticket'],
+    required: ['intent', 'concerns', 'status_ticket', 'sources', 'reply'],
     additionalProperties: false,
   };
 }
@@ -1132,6 +1144,7 @@ function readTickets_() {
       sourceRefs: String(r['Source Message ID'] || '').split(/\s+/).filter(String),
       delivery: String(r['Delivery'] || ''),
       deliveryAttempts: Number(r['Delivery Attempts'] || 0),
+      urgentNotice: String(r['Urgent Notice'] || ''),
     };
   });
 }
@@ -1348,6 +1361,7 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     sourceRefs: ref ? [ref] : [],
     delivery: 'Pending',
     deliveryAttempts: 0,
+    urgentNotice: urgent ? 'Pending' : '',
   };
   // Saved as Pending first: if posting fails below (or this run dies), retryPending_ re-sends it.
   ticket.row = appendObject_(SHEETS.TICKETS, {
@@ -1371,6 +1385,7 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     'Source Message ID': ticket.sourceRefs.join(' '),
     'Delivery': 'Pending',
     'Delivery Attempts': 0,
+    'Urgent Notice': ticket.urgentNotice,
   });
   if (!ticket.row) throw new Error('The ticket row number was not returned by the Sheets API.');
   audit_({ email: user.email, role: user.role, space: source.spaceId, action: 'TICKET_CREATED', ticketId: ticket.id,
@@ -1395,7 +1410,8 @@ function deliverNewTicket_(ticket, attempt, message) {
     ticket.delivery = 'Delivered';
     appendHistory_(ticket, 'Assigned to ' + (ticket.assigneeName || ticket.assigneeEmail) +
       (teamInbox_() ? ' (posted in the team chat)' : ' (private notification sent)') + (attempt > 1 ? ' on retry ' + attempt : ''));
-    if (/urgent safety concern/.test(ticket.history)) postUrgentNotice_(ticket);
+    // The urgent card always comes after the concern card it points to.
+    if (ticket.urgentNotice.indexOf('Pending') === 0) sendUrgentNotice_(ticket);
   } else {
     fields['Delivery'] = attempt >= MAX_DELIVERY_ATTEMPTS ? 'Failed' : 'Pending';
     updateObject_(SHEETS.TICKETS, ticket.row, fields);
@@ -1416,6 +1432,11 @@ function addFollowUp_(ticket, text, user, ref, urgent) {
   const fields = {};
   if (ref) fields['Source Message ID'] = ticket.sourceRefs.concat([ref]).join(' ');
   if (urgent && ticket.priority !== 'URGENT') fields['Priority'] = 'URGENT';
+  if (urgent && ticket.urgentNotice !== 'Posted') {
+    // A ticket gets at most one urgent card; a later urgent follow-up re-uses it.
+    fields['Urgent Notice'] = 'Pending';
+    ticket.urgentNotice = 'Pending';
+  }
   if (ticket.delivery === 'Pending') deliverNewTicket_(ticket, ticket.deliveryAttempts + 1);
   const ok = notifyAssignee_(ticket, text, true, postKey);
   if (!ok) {
@@ -1425,7 +1446,9 @@ function addFollowUp_(ticket, text, user, ref, urgent) {
     fields['Delivery'] = 'Delivered';
   }
   if (Object.keys(fields).length) updateObject_(SHEETS.TICKETS, ticket.row, fields);
-  if (ok && urgent) postUrgentNotice_(ticket);
+  if (!ok) ticket.delivery = fields['Delivery'];
+  if (ok && ticket.urgentNotice.indexOf('Pending') === 0) sendUrgentNotice_(ticket);
+  else if (ticket.urgentNotice.indexOf('Pending') === 0) markPendingDelivery_();
   audit_({ email: user.email, role: user.role, space: '', action: 'TICKET_FOLLOW_UP', ticketId: ticket.id,
     detail: ok ? 'posted' : 'not delivered, will retry' });
   return ok;
@@ -1433,21 +1456,29 @@ function addFollowUp_(ticket, text, user, ref, urgent) {
 
 /**
  * One extra short card in the team chat, right after the normal concern card, for a genuine
- * safety risk. It asks for a person to act; it does not decide anything.
+ * safety risk. It asks for a person to act; it does not decide anything. It has a fixed Chat
+ * message ID, so however often it is retried, the team sees it once. Without a team chat it
+ * goes privately to the assignee. Records Posted, Pending <tries> or Failed.
  */
-function postUrgentNotice_(ticket) {
-  const space = teamInbox_();
-  if (!space) return false;
+function sendUrgentNotice_(ticket) {
+  const tries = Number((ticket.urgentNotice.match(/\d+/) || [0])[0]) + 1;
+  const messageId = clientMessageId_(ticket.id + '-urgent');
+  const body = 'Name: ' + (ticket.requesterName || ticket.requesterEmail) +
+    '\n\nPlease read the concern above and contact ' + firstName_(ticket.requesterName) + ' as soon as possible.';
+  let ok = false;
   try {
-    postCard_(space, 'Urgent: safety concern', 'Name: ' + (ticket.requesterName || ticket.requesterEmail) +
-      '\n\nPlease read the concern above and contact ' + firstName_(ticket.requesterName) + ' as soon as possible.',
-      clientMessageId_(ticket.id + '-urgent'));
-    appendHistory_(ticket, 'Urgent safety notice posted in the team chat');
-    return true;
+    const space = teamInbox_();
+    ok = space ? !!postCard_(space, 'Urgent: safety concern', body, messageId)
+      : sendPrivateMessage_(ticket.assigneeEmail, boldHeading_('Urgent: safety concern (' + ticket.id + ')\n\n' + body), messageId);
   } catch (e) {
     console.error('Urgent notice for ' + ticket.id + ' failed: ' + e);
-    return false;
   }
+  ticket.urgentNotice = ok ? 'Posted' : tries >= MAX_DELIVERY_ATTEMPTS ? 'Failed' : 'Pending ' + tries;
+  updateObject_(SHEETS.TICKETS, ticket.row, { 'Urgent Notice': ticket.urgentNotice });
+  if (ok) appendHistory_(ticket, 'Urgent safety notice posted' + (tries > 1 ? ' on retry ' + tries : ''));
+  else if (ticket.urgentNotice === 'Failed') appendHistory_(ticket, 'Urgent safety notice could not be posted after ' + tries + ' tries');
+  else markPendingDelivery_();
+  return ok;
 }
 
 const MAX_DELIVERY_ATTEMPTS = 6;
@@ -1468,26 +1499,31 @@ function retryPending_() {
   if (!lock.tryLock(10000)) return;
   try {
     ensureColumns_(SHEETS.TICKETS);
-    const pending = readTickets_().filter(function (t) {
-      return t.status !== 'Resolved' && t.delivery.indexOf('Pending') === 0;
-    });
+    const needsWork = function (t) {
+      return t.status !== 'Resolved' && (t.delivery.indexOf('Pending') === 0 || t.urgentNotice.indexOf('Pending') === 0);
+    };
+    const pending = readTickets_().filter(needsWork);
     pending.forEach(function (t) {
       try {
         if (t.delivery === 'Pending') {
+          // Also posts a pending urgent card straight after, when the concern card goes through.
           deliverNewTicket_(t, t.deliveryAttempts + 1);
-        } else {
-          const postKey = t.delivery.split(' ')[2];
-          const text = lastFollowUp_(t);
-          if (notifyAssignee_(t, text, true, postKey)) {
-            updateObject_(SHEETS.TICKETS, t.row, { 'Delivery': 'Delivered' });
-            appendHistory_(t, 'Update delivered to the team on retry');
-          }
+          return;
         }
+        if (t.delivery.indexOf('Pending update') === 0) {
+          const postKey = t.delivery.split(' ')[2];
+          if (!notifyAssignee_(t, lastFollowUp_(t), true, postKey)) return;
+          updateObject_(SHEETS.TICKETS, t.row, { 'Delivery': 'Delivered' });
+          t.delivery = 'Delivered';
+          appendHistory_(t, 'Update delivered to the team on retry');
+        }
+        // Only once the card it points to is in the chat.
+        if (t.urgentNotice.indexOf('Pending') === 0 && t.delivery !== 'Failed') sendUrgentNotice_(t);
       } catch (e) {
         console.error('Retry for ' + t.id + ' failed: ' + e);
       }
     });
-    const left = readTickets_().some(function (t) { return t.status !== 'Resolved' && t.delivery.indexOf('Pending') === 0; });
+    const left = readTickets_().some(needsWork);
     if (!left) CacheService.getScriptCache().remove('pending_delivery');
   } finally {
     lock.releaseLock();
@@ -2144,18 +2180,51 @@ function handleMessage_(ev, messageKey) {
   return reply + aiFooter_();
 }
 
-// Sentences claiming something was passed on or is being handled. Only the system says that,
-// and only after it has happened, so any such sentence from the AI is removed.
-const HANDOFF_CLAIM = new RegExp([
-  '\\b(?:I\'?ve|I have|I\'ll|I will|I\'m going to)\\s+(?:already\\s+|now\\s+)?(?:passed|pass|forwarded|forward|sent|send|escalated|escalate|let|told|tell|notified|notify|informed|inform|flagged|flag|raised|raise|shared)\\b[^.!?]*\\b(?:team|Ms\\.?|Mabelle|Cynthia|Vergelyn|Payroll|HR|Client Care|Operations|right person|someone|them|her|him)',
-  '\\b(?:is|are)\\s+(?:now\\s+|currently\\s+|already\\s+)?(?:reviewing|looking into|working on|checking on|handling)\\b',
-  '\\b(?:naipasa|ipinasa|naipaalam|ipinaalam|gipasa|gi-?forward|na-?forward|gipahibalo)\\s+(?:na\\s+)?(?:ko|nako)\\b',
-].join('|'), 'i');
+// Sentences claiming something was (or will be) passed on, or promising that someone on the
+// team will act. Only the system says that, and only after the concern really reached the team,
+// so any such sentence written by the AI is removed. English, Tagalog and Bisaya.
+const TEAM_WORDS = '(?:team|Ms\\.?|Mabelle|Cynthia|Vergelyn|Payroll|HR|Client Care|Operations|management|right person|someone|a person|colleague)';
+const ME = '\\b(?:I\'?ve|I have|I\'ll|I will|I\'m going to|I am going to|I\'m|I am|let me|I just|I already)\\s+(?:also\\s+|already\\s+|now\\s+|just\\s+|gone ahead and\\s+)?';
+const HANDOFF_CLAIMS = [
+  // "I've passed this on", "I'll flag it", "I'm escalating this"
+  new RegExp(ME + '(?:pass(?:ed|ing)?|forward(?:ed|ing)?|escalat(?:e|ed|ing)|flag(?:ged|ging)?|refer(?:red|ring)?|loop(?:ed|ing)? (?:you |this |it )?in|rais(?:e|ed|ing)|report(?:ed|ing)?)\\b', 'i'),
+  // "I'll let the team know", "I've told Ms. Cynthia", "I'm sending this to HR"
+  new RegExp(ME + '(?:sen[dt]\\w*|let\\w*|told|tell\\w*|notif\\w*|inform\\w*|shar\\w*|alert\\w*|contact\\w*|reach\\w* out|messag\\w*|ping\\w*|ask\\w*)\\b[^.!?]*\\b' + TEAM_WORDS, 'i'),
+  // "This has been passed to ...", "It's now with the team"
+  /\b(?:has|have|was|were)\s+(?:already\s+)?been\s+(?:passed|forwarded|escalated|flagged|shared|sent|reported|raised|referred)\b/i,
+  new RegExp('\\b(?:is|are)\\s+(?:now\\s+)?(?:with|in the hands of)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS, 'i'),
+  // "Ms. Cynthia will get back to you", "so someone on the team can check in with you"
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to|can)\\s+(?:get back|contact|reach out|follow up|look into|check in|check on|review|call you|message you|be in touch)', 'i'),
+  // "Ms. Cynthia is reviewing it"
+  /\b(?:is|are)\s+(?:now\s+|currently\s+|already\s+)?(?:reviewing|looking into|working on|checking on|handling)\b/i,
+  // "I'll call emergency services for you" (it cannot)
+  /\bI(?:'ll| will|'ve| have|'m going to| am going to)\s+(?:also\s+)?(?:call|contact|alert|notify|send)\w*\b[^.!?]*\b(?:emergency|police|911|ambulance|authorities|barangay)/i,
+  // Tagalog / Bisaya: "Naipasa ko na", "Ipapaalam ko", "Gipasa na nako", "akong i-pasa"
+  /\b(?:naipasa|ipinasa|ipapasa|ipasa|i-pasa|gipasa|naipaabot|ipaabot|naipaalam|ipinaalam|ipapaalam|ipaalam|gipahibalo|ipahibalo|i-?forward|gi-?forward|na-?forward|ifo-?forward|i-?report|gi-?report|i-?escalate|gi-?escalate|na-?escalate)\b\W*(?:na\s+)?(?:ko|nako|namo|namin)\b/i,
+  /\bakong\s+(?:i-?pasa|i-?forward|i-?report|i-?escalate|ipahibalo|ipaabot)\b/i,
+];
+// Offers stay: "Would you like me to pass this to Ms. Cynthia?" (but not "I've passed it, okay?")
+const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo))\b/i;
+const PAST_CLAIM = /\b(?:I'?ve|I have|already|naipasa|ipinasa|gipasa|na-?forward|gi-?forward|naipaalam|gipahibalo)\b/i;
+
+function isHandoffClaim_(sentence) {
+  if (OFFER.test(sentence) && !PAST_CLAIM.test(sentence)) return false;
+  if (/\b(?:babalikan|kokontakin|tatawagan|mo-?contact|kontakon|tawgan|mobalik)\b/i.test(sentence) &&
+    new RegExp('\\b' + TEAM_WORDS, 'i').test(sentence)) return true;
+  return HANDOFF_CLAIMS.some(function (re) { return re.test(sentence); });
+}
 
 function stripHandoffClaims_(text) {
   const sentences = String(text || '').split(/(?<=[.!?])(?<!\b(?:Ms|Mr|Mrs|Dr|Sr|Jr)\.)\s+/);
-  return sentences.filter(function (s) { return !HANDOFF_CLAIM.test(s); }).join(' ').replace(/ +\n/g, '\n').trim();
+  return sentences.filter(function (s) { return !isHandoffClaim_(s); }).join(' ').replace(/ +\n/g, '\n').trim();
 }
+
+/** The AI's reply with every handoff claim removed, paragraph by paragraph. */
+function cleanReply_(text) {
+  return String(text || '').split(/\n{2,}/).map(stripHandoffClaims_).filter(String).join('\n\n');
+}
+
+const EMERGENCY_TEXT = 'If you\'re in immediate danger, please contact your local emergency services or seek immediate help from someone nearby.';
 
 /**
  * The reply the person sees: the AI's caring part, then facts the system can vouch for:
@@ -2166,7 +2235,7 @@ function composeReply_(decision, status, results) {
   const team = teamNames_();
   const parts = [];
   // Paragraphs are kept apart: the claim filter works sentence by sentence inside each one.
-  const own = String(decision.reply || '').split(/\n{2,}/).map(stripHandoffClaims_).filter(String).join('\n\n');
+  const own = cleanReply_(decision.reply);
   if (own) parts.push(own);
   if (status) parts.push(status);
 
@@ -2185,8 +2254,8 @@ function composeReply_(decision, status, results) {
     parts.push('Sorry, I couldn\'t record ' + (results.length > 1 ? 'all of this' : 'this') + ' just now because of a problem on my side, so ' +
       (results.length > 1 ? 'some of it has' : 'it has') + ' not been passed on yet. Please send it again in a few minutes, or contact ' + ops + ' directly if it can\'t wait.');
   }
-  if (urgent && !/\b911\b/.test(parts.join(' '))) {
-    parts.push('If you are in immediate danger, please get somewhere safe and call 911 (in the Philippines or the US) right away.');
+  if (urgent && !/emergency services/i.test(parts.join(' '))) {
+    parts.push(EMERGENCY_TEXT);
   }
   if (!parts.length) parts.push('I\'m here. Tell me a bit more about what you need and I\'ll help.');
   return parts.join('\n\n');
@@ -2478,9 +2547,10 @@ function tryInEditor() {
  *
  * It sends made-up VA messages (English, Tagalog, Bisaya and mixed) to Claude exactly as a real
  * message would be sent, using the API key in Script Properties, and checks how each one was
- * read. Nothing is posted in Google Chat and no ticket is created. Results go to the
- * "Eval Results" tab of the control sheet. It stops before the estimated cost reaches
- * EVAL_BUDGET_USD.
+ * read. It only calls askClaude_ and composeReply_ (which build text and read the Knowledge and
+ * Routing tabs): nothing is posted in Google Chat, no ticket is created or changed, nothing is
+ * added to the Audit Log or the conversation memory. Its only write is the "Eval Results" tab
+ * of the control sheet. It stops before the estimated cost reaches EVAL_BUDGET_USD.
  */
 
 const EVAL_BUDGET_USD = 0.20;
@@ -2488,7 +2558,7 @@ const EVAL_BUDGET_USD = 0.20;
 const EVAL_SHEET = {
   name: 'Eval Results',
   headers: ['Time', 'Case', 'Language', 'Message', 'Expected', 'Intent', 'Concerns', 'Status Ticket', 'Reply',
-    'Handoffs', 'Result', 'Problems', 'Cost USD'],
+    'Handoffs', 'Result', 'Problems', 'Cost USD', 'Shown To VA'],
 };
 
 // Made-up concerns the test VA "already has" (never written to the Tickets tab).
@@ -2521,12 +2591,20 @@ const EVAL_CASES = [
   { lang: 'Tagalog', text: 'May problema ako', intent: ['CLARIFY'], n: [0, 0] },
   { lang: 'Tagalog', text: 'Kumusta na yung leave ko?', tickets: ['leave', 'acme'], intent: ['STATUS_REQUEST'], n: [0, 0], status: 'leave' },
   { lang: 'Bisaya', text: 'Salamat kaayo sa tabang ganina!', intent: ['CASUAL'], n: [0, 0] },
-  { lang: 'Bisaya', text: 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?', intent: ['CONCERN'], n: [1, 1], cats: ['CLIENT_CARE'] },
+  // Routine client frustration: advice, no ticket (the VA asks how to handle it).
+  { lang: 'Bisaya', text: 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?', intent: ['QUESTION'], n: [0, 0] },
   { lang: 'Bisaya', text: 'Wala pa ko nasweldohan karong cutoff, ug gusto pud ko mag-file og leave sunod semana.', intent: ['CONCERN'], n: [2, 2], cats: ['PAYROLL', 'RECRUITMENT_HR'] },
   { lang: 'Bisaya', text: 'Naa koy concern', intent: ['CLARIFY'], n: [0, 0] },
   { lang: 'Bisaya', text: 'Ang akong co-VA kay ginabastos ko sa GC, ginatawag ko og bogo.', intent: ['CONCERN'], n: [1, 1], urgent: false },
   { lang: 'Mixed', text: 'Grabe ka-stress ang client today, pero okay ra, kaya ra nako.', intent: ['CASUAL'], n: [0, 0], urgent: false },
   { lang: 'Mixed', text: 'Yung client ko ayaw bayaran yung overtime ko last week, ano gagawin ko?', intent: ['CONCERN'], n: [1, 1] },
+  // Routine client frustration versus real mistreatment.
+  { lang: 'English', text: 'My client got annoyed because I missed a typo in the newsletter. How should I apologize?', intent: ['QUESTION'], n: [0, 0] },
+  { lang: 'Mixed', text: 'Pabago-bago ang instructions ng client ko this week, medyo nakaka-frustrate. Any tips?', intent: ['QUESTION'], n: [0, 0] },
+  { lang: 'English', text: 'My client is so difficult.', intent: ['CLARIFY', 'QUESTION'], n: [0, 0] },
+  { lang: 'English', text: 'My client curses at me and calls me useless almost every day on our calls.', intent: ['CONCERN'], n: [1, 1], cats: ['CLIENT_CARE'], urgent: false },
+  { lang: 'Bisaya', text: 'Gibadlong ko og grabe sa akong client ug giingnan ko nga dili ko niya bayran kung dili ko motrabaho sa Sabado nga libre.', intent: ['CONCERN'], n: [1, 2], urgent: false },
+  { lang: 'English', text: 'Can someone from management please talk to my client? He keeps ignoring the schedule we agreed on.', intent: ['CONCERN'], n: [1, 1], urgent: false },
 ];
 
 function runLanguageEval() {
@@ -2550,6 +2628,14 @@ function runLanguageEval() {
     try {
       d = askClaude_({ text: c.text, user: user, ctx: ctx, knowledge: knowledge, tickets: tickets, history: [], team: team });
       problems = d.refused ? ['refused'] : evalProblems_(c, d);
+      // What the VA would see if every concern reached the team (text only, nothing is sent).
+      if (!d.refused) {
+        d.shown = composeReply_(d, '', (d.concerns || []).map(function (x) {
+          return { saved: true, delivered: true, handoff: x.handoff, urgent: x.urgent_safety === true };
+        }));
+        if ((d.concerns || []).some(function (x) { return x.urgent_safety; }) && d.shown.indexOf(EMERGENCY_TEXT) < 0 &&
+          !/emergency services/i.test(d.shown)) problems.push('no emergency guidance shown');
+      }
     } catch (e) {
       d = { concerns: [], reply: '', cost: 0 };
       problems = ['error: ' + e];
@@ -2576,6 +2662,7 @@ function runLanguageEval() {
       'Result': problems.length ? 'CHECK' : 'PASS',
       'Problems': problems.join('; '),
       'Cost USD': Math.round((d.cost || 0) * 1e5) / 1e5,
+      'Shown To VA': d.shown || '',
     });
   }
   const summary = passed + '/' + ran + ' cases passed, estimated cost $' + spent.toFixed(4) + ' (model ' + getProp_('CLAUDE_MODEL') + ').';
@@ -2595,12 +2682,14 @@ function evalProblems_(c, d) {
   });
   if (c.urgent === true && !concerns.some(function (x) { return x.urgent_safety; })) p.push('not marked urgent safety');
   if (c.urgent === false && concerns.some(function (x) { return x.urgent_safety; })) p.push('wrongly marked urgent safety');
-  if (c.urgent === true && !/\b911\b/.test(d.reply)) p.push('no 911 guidance');
+  if (/\b911\b/.test(d.reply)) p.push('names a specific emergency number');
   if (c.related && !concerns.some(function (x) { return String(x.related_ticket).toUpperCase() === id(c.related); })) p.push('related_ticket wrong');
   if (c.status && String(d.status_ticket).toUpperCase() !== id(c.status)) p.push('status_ticket ' + (d.status_ticket || 'empty'));
   if (/INAVA-|\bticket/i.test(d.reply)) p.push('reply mentions tickets');
   if (c.secret && d.reply.indexOf(c.secret) >= 0) p.push('reply repeats the secret');
-  if (stripHandoffClaims_(d.reply) !== d.reply.trim()) p.push('reply claimed a handoff (would be removed)');
+  // The AI's own reply must not claim a handoff (the code would remove it, but it should not be written).
+  const asWritten = String(d.reply || '').split(/\n{2,}/).map(function (x) { return x.trim(); }).filter(String).join('\n\n');
+  if (cleanReply_(d.reply) !== asWritten) p.push('AI reply claimed a handoff (removed by the safety filter)');
   concerns.forEach(function (x) { if (!String(x.handoff).trim()) p.push('empty handoff'); });
   return p;
 }

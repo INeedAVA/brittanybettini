@@ -89,6 +89,7 @@ function readTickets_() {
       sourceRefs: String(r['Source Message ID'] || '').split(/\s+/).filter(String),
       delivery: String(r['Delivery'] || ''),
       deliveryAttempts: Number(r['Delivery Attempts'] || 0),
+      urgentNotice: String(r['Urgent Notice'] || ''),
     };
   });
 }
@@ -305,6 +306,7 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     sourceRefs: ref ? [ref] : [],
     delivery: 'Pending',
     deliveryAttempts: 0,
+    urgentNotice: urgent ? 'Pending' : '',
   };
   // Saved as Pending first: if posting fails below (or this run dies), retryPending_ re-sends it.
   ticket.row = appendObject_(SHEETS.TICKETS, {
@@ -328,6 +330,7 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     'Source Message ID': ticket.sourceRefs.join(' '),
     'Delivery': 'Pending',
     'Delivery Attempts': 0,
+    'Urgent Notice': ticket.urgentNotice,
   });
   if (!ticket.row) throw new Error('The ticket row number was not returned by the Sheets API.');
   audit_({ email: user.email, role: user.role, space: source.spaceId, action: 'TICKET_CREATED', ticketId: ticket.id,
@@ -352,7 +355,8 @@ function deliverNewTicket_(ticket, attempt, message) {
     ticket.delivery = 'Delivered';
     appendHistory_(ticket, 'Assigned to ' + (ticket.assigneeName || ticket.assigneeEmail) +
       (teamInbox_() ? ' (posted in the team chat)' : ' (private notification sent)') + (attempt > 1 ? ' on retry ' + attempt : ''));
-    if (/urgent safety concern/.test(ticket.history)) postUrgentNotice_(ticket);
+    // The urgent card always comes after the concern card it points to.
+    if (ticket.urgentNotice.indexOf('Pending') === 0) sendUrgentNotice_(ticket);
   } else {
     fields['Delivery'] = attempt >= MAX_DELIVERY_ATTEMPTS ? 'Failed' : 'Pending';
     updateObject_(SHEETS.TICKETS, ticket.row, fields);
@@ -373,6 +377,11 @@ function addFollowUp_(ticket, text, user, ref, urgent) {
   const fields = {};
   if (ref) fields['Source Message ID'] = ticket.sourceRefs.concat([ref]).join(' ');
   if (urgent && ticket.priority !== 'URGENT') fields['Priority'] = 'URGENT';
+  if (urgent && ticket.urgentNotice !== 'Posted') {
+    // A ticket gets at most one urgent card; a later urgent follow-up re-uses it.
+    fields['Urgent Notice'] = 'Pending';
+    ticket.urgentNotice = 'Pending';
+  }
   if (ticket.delivery === 'Pending') deliverNewTicket_(ticket, ticket.deliveryAttempts + 1);
   const ok = notifyAssignee_(ticket, text, true, postKey);
   if (!ok) {
@@ -382,7 +391,9 @@ function addFollowUp_(ticket, text, user, ref, urgent) {
     fields['Delivery'] = 'Delivered';
   }
   if (Object.keys(fields).length) updateObject_(SHEETS.TICKETS, ticket.row, fields);
-  if (ok && urgent) postUrgentNotice_(ticket);
+  if (!ok) ticket.delivery = fields['Delivery'];
+  if (ok && ticket.urgentNotice.indexOf('Pending') === 0) sendUrgentNotice_(ticket);
+  else if (ticket.urgentNotice.indexOf('Pending') === 0) markPendingDelivery_();
   audit_({ email: user.email, role: user.role, space: '', action: 'TICKET_FOLLOW_UP', ticketId: ticket.id,
     detail: ok ? 'posted' : 'not delivered, will retry' });
   return ok;
@@ -390,21 +401,29 @@ function addFollowUp_(ticket, text, user, ref, urgent) {
 
 /**
  * One extra short card in the team chat, right after the normal concern card, for a genuine
- * safety risk. It asks for a person to act; it does not decide anything.
+ * safety risk. It asks for a person to act; it does not decide anything. It has a fixed Chat
+ * message ID, so however often it is retried, the team sees it once. Without a team chat it
+ * goes privately to the assignee. Records Posted, Pending <tries> or Failed.
  */
-function postUrgentNotice_(ticket) {
-  const space = teamInbox_();
-  if (!space) return false;
+function sendUrgentNotice_(ticket) {
+  const tries = Number((ticket.urgentNotice.match(/\d+/) || [0])[0]) + 1;
+  const messageId = clientMessageId_(ticket.id + '-urgent');
+  const body = 'Name: ' + (ticket.requesterName || ticket.requesterEmail) +
+    '\n\nPlease read the concern above and contact ' + firstName_(ticket.requesterName) + ' as soon as possible.';
+  let ok = false;
   try {
-    postCard_(space, 'Urgent: safety concern', 'Name: ' + (ticket.requesterName || ticket.requesterEmail) +
-      '\n\nPlease read the concern above and contact ' + firstName_(ticket.requesterName) + ' as soon as possible.',
-      clientMessageId_(ticket.id + '-urgent'));
-    appendHistory_(ticket, 'Urgent safety notice posted in the team chat');
-    return true;
+    const space = teamInbox_();
+    ok = space ? !!postCard_(space, 'Urgent: safety concern', body, messageId)
+      : sendPrivateMessage_(ticket.assigneeEmail, boldHeading_('Urgent: safety concern (' + ticket.id + ')\n\n' + body), messageId);
   } catch (e) {
     console.error('Urgent notice for ' + ticket.id + ' failed: ' + e);
-    return false;
   }
+  ticket.urgentNotice = ok ? 'Posted' : tries >= MAX_DELIVERY_ATTEMPTS ? 'Failed' : 'Pending ' + tries;
+  updateObject_(SHEETS.TICKETS, ticket.row, { 'Urgent Notice': ticket.urgentNotice });
+  if (ok) appendHistory_(ticket, 'Urgent safety notice posted' + (tries > 1 ? ' on retry ' + tries : ''));
+  else if (ticket.urgentNotice === 'Failed') appendHistory_(ticket, 'Urgent safety notice could not be posted after ' + tries + ' tries');
+  else markPendingDelivery_();
+  return ok;
 }
 
 const MAX_DELIVERY_ATTEMPTS = 6;
@@ -425,26 +444,31 @@ function retryPending_() {
   if (!lock.tryLock(10000)) return;
   try {
     ensureColumns_(SHEETS.TICKETS);
-    const pending = readTickets_().filter(function (t) {
-      return t.status !== 'Resolved' && t.delivery.indexOf('Pending') === 0;
-    });
+    const needsWork = function (t) {
+      return t.status !== 'Resolved' && (t.delivery.indexOf('Pending') === 0 || t.urgentNotice.indexOf('Pending') === 0);
+    };
+    const pending = readTickets_().filter(needsWork);
     pending.forEach(function (t) {
       try {
         if (t.delivery === 'Pending') {
+          // Also posts a pending urgent card straight after, when the concern card goes through.
           deliverNewTicket_(t, t.deliveryAttempts + 1);
-        } else {
-          const postKey = t.delivery.split(' ')[2];
-          const text = lastFollowUp_(t);
-          if (notifyAssignee_(t, text, true, postKey)) {
-            updateObject_(SHEETS.TICKETS, t.row, { 'Delivery': 'Delivered' });
-            appendHistory_(t, 'Update delivered to the team on retry');
-          }
+          return;
         }
+        if (t.delivery.indexOf('Pending update') === 0) {
+          const postKey = t.delivery.split(' ')[2];
+          if (!notifyAssignee_(t, lastFollowUp_(t), true, postKey)) return;
+          updateObject_(SHEETS.TICKETS, t.row, { 'Delivery': 'Delivered' });
+          t.delivery = 'Delivered';
+          appendHistory_(t, 'Update delivered to the team on retry');
+        }
+        // Only once the card it points to is in the chat.
+        if (t.urgentNotice.indexOf('Pending') === 0 && t.delivery !== 'Failed') sendUrgentNotice_(t);
       } catch (e) {
         console.error('Retry for ' + t.id + ' failed: ' + e);
       }
     });
-    const left = readTickets_().some(function (t) { return t.status !== 'Resolved' && t.delivery.indexOf('Pending') === 0; });
+    const left = readTickets_().some(needsWork);
     if (!left) CacheService.getScriptCache().remove('pending_delivery');
   } finally {
     lock.releaseLock();

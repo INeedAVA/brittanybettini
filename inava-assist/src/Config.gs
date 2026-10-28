@@ -96,7 +96,8 @@ const SHEETS = {
       // Added in Phase 1 (ensureColumns_ adds them to an existing sheet): which chat messages a
       // ticket came from (so a retried event never makes a second ticket), and whether the
       // team chat has really received it (Pending tickets are re-sent safely).
-      'Source Message ID', 'Delivery', 'Delivery Attempts'],
+      // Urgent Notice: the extra URGENT: SAFETY CONCERN card (Pending / Posted / Failed), retried like Delivery.
+      'Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice'],
   },
   AUDIT: {
     name: 'Audit Log',

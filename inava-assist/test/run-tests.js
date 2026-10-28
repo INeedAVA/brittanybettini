@@ -869,13 +869,16 @@ test('urgent safety: unchanged concern card plus one urgent notice; ordinary ups
   assert.match(cardText(posts[0]), /^<font color="#D93025"><b>NEW CONCERN<\/b><\/font><br><br>Name: Vicky VA<br><br>Concern: A client said/);
   assert.match(cardText(posts[1]), /^<font color="#D93025"><b>URGENT: SAFETY CONCERN<\/b><\/font><br><br>Name: Vicky VA<br><br>Please read the concern above and contact Vicky/);
   assert.strictEqual(ticketRows(env)[0].Priority, 'URGENT');
-  assert.match(r.text, /call 911/);
+  assert.match(r.text, /If you're in immediate danger, please contact your local emergency services or seek immediate help from someone nearby\./);
+  assert.doesNotMatch(r.text, /911/);
   assert.match(r.text, /passed this to Mabelle/);
+  assert.strictEqual(ticketRows(env)[0]['Urgent Notice'], 'Posted');
 
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'That sounds exhausting.', concerns: [concern({ priority: 'HIGH' })] }));
   const r2 = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client is so rude, I am fed up'));
   assert.strictEqual(inboxPosts(env).length, 3, 'only the normal card');
-  assert.doesNotMatch(r2.text, /911/);
+  assert.doesNotMatch(r2.text, /emergency/);
+  assert.strictEqual(ticketRows(env)[1]['Urgent Notice'], '');
 });
 
 test('new ticket columns are added to an existing sheet without touching its data', () => {
@@ -885,7 +888,7 @@ test('new ticket columns are added to an existing sheet without touching its dat
   tickets.push(['INAVA-261001-001', 'Assigned', 'CLIENT_CARE', 'NORMAL']);
   Object.keys(env.cache).filter((k) => k.indexOf('cols_ok:') === 0).forEach((k) => delete env.cache[k]);
   env.ctx.ensureColumns_(env.get('SHEETS.TICKETS'));
-  assert.deepStrictEqual(tickets[0].slice(18), ['Source Message ID', 'Delivery', 'Delivery Attempts']);
+  assert.deepStrictEqual(tickets[0].slice(18), ['Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice']);
   assert.strictEqual(tickets[1][0], 'INAVA-261001-001');
   // Older tickets have no Delivery value and are never re-sent.
   env.sheet('Spaces').push(['spaces/inbox', 'Inbox', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '', 'YES']);
@@ -901,12 +904,19 @@ test('live language test: checks each case, writes results, never posts or creat
     return { body: { stop_reason: 'end_turn', usage: { input_tokens: 1000, output_tokens: 500 },
       content: [{ type: 'text', text: JSON.stringify(answer({ intent: casual ? 'CASUAL' : 'QUESTION', reply: 'Hello!' })) }] } };
   });
+  const snapshot = () => JSON.stringify(['Tickets', 'Audit Log', 'Users', 'Spaces', 'Routing', 'Knowledge'].map((n) => env.sheet(n)));
+  const before = snapshot();
+  const propsBefore = JSON.stringify(env.props);
   env.ctx.runLanguageEval();
+  // Only the Eval Results tab is written: tickets, audit log, settings, chat and memory are untouched.
+  assert.strictEqual(snapshot(), before);
+  assert.strictEqual(JSON.stringify(env.props), propsBefore);
+  assert.ok(!Object.keys(env.cache).some((k) => /^hist:|^msg:|pending_delivery/.test(k)));
   const rows = env.sheet('Eval Results');
   assert.strictEqual(rows[0][0], 'Time');
   const total = rows[rows.length - 1];
   assert.strictEqual(total[1], 'TOTAL');
-  assert.match(total[11], /^\d+\/26 cases passed, estimated cost \$0\.0091/);
+  assert.match(total[11], /^\d+\/32 cases passed, estimated cost \$0\.0112/);
   assert.ok(rows.some((r) => r[10] === 'PASS') && rows.some((r) => r[10] === 'CHECK'));
   assert.strictEqual(ticketRows(env).length, 0);
   assert.strictEqual(env.sent.chat.length, 0);
@@ -914,9 +924,111 @@ test('live language test: checks each case, writes results, never posts or creat
   // Stops at the budget.
   env.setClaude(() => ({ body: { stop_reason: 'end_turn', usage: { input_tokens: 0, output_tokens: 300000 },
     content: [{ type: 'text', text: JSON.stringify(answer({})) }] } }));
-  const before = env.sent.claude.length;
+  const calls = env.sent.claude.length;
   env.ctx.runLanguageEval();
-  assert.strictEqual(env.sent.claude.length - before, 2, '$0.15 per call: stops after passing $0.20');
+  assert.strictEqual(env.sent.claude.length - calls, 2, '$0.15 per call: stops after passing $0.20');
+});
+
+test('routine client frustration gets advice and an offer, no ticket; mistreatment is escalated', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'QUESTION', concerns: [],
+    reply: 'Ay, that sounds stressful. Reply to your client right away with a short apology and a clear time for the next update.\n\n' +
+      'Would you like me to pass this to Cyn from our Client Care team if it keeps happening?' }));
+  let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?'));
+  assert.strictEqual(ticketRows(env).length, 0);
+  assert.strictEqual(inboxPosts(env).length, 0);
+  assert.match(r.text, /short apology[^]*Would you like me to pass this to Cyn/, 'an offer (a question) is kept');
+
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Nobody should be spoken to like that, and I\'m sorry.',
+    concerns: [concern({ category: 'CLIENT_CARE', priority: 'HIGH', handoff: 'I\'ve passed this to Cyn from our Client Care team, and they\'ll get back to you.' })] }));
+  r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client curses at me and calls me useless almost every day'));
+  assert.strictEqual(ticketRows(env).length, 1);
+  assert.strictEqual(ticketRows(env)[0].Priority, 'HIGH');
+  assert.match(cardText(inboxPosts(env)[0]), /^<font color="#D93025"><b>NEW CONCERN<\/b><\/font><br><br>Name: Vicky VA<br><br>Concern: My client curses at me/);
+  assert.strictEqual(r.text, 'Nobody should be spoken to like that, and I\'m sorry.\n\nI\'ve passed this to Cyn from our Client Care team, and they\'ll get back to you.');
+});
+
+test('premature handoff claims from the AI are never shown, in any language', () => {
+  const claims = [
+    'I\'ve passed this on so the payroll team can look into it.',
+    'Schedule changes need approval, so I\'ve flagged both parts for the team to decide.',
+    'Nasa tabi ka namin, so I\'ve passed this along so someone on the team can check in with you.',
+    'Busa akong i-pasa ang imong request ngadto sa team.',
+    'Naipasa ko na ito sa Payroll.',
+    'Gipasa na nako ni kay Ms. Cynthia.',
+    'I\'ll let Ms. Cynthia know right away.',
+    'Ms. Vergelyn will get back to you soon.',
+    'This has been forwarded to HR.',
+    'I\'ll call emergency services for you.',
+  ];
+  // Delivered: each claim is replaced by the system's one handoff, never shown twice.
+  const env = withInbox(setupEnv());
+  claims.forEach((claim, i) => {
+    claudeReturns(env, answer({ intent: 'CONCERN', reply: 'I\'m sorry you\'re dealing with this. ' + claim,
+      concerns: [concern({ handoff: 'HANDOFF-' + i })] }));
+    const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Concern number ' + i));
+    assert.strictEqual(r.text, 'I\'m sorry you\'re dealing with this.\n\nHANDOFF-' + i, claim);
+  });
+  // Not delivered: no claim at all, only the honest note.
+  const env2 = withInbox(setupEnv());
+  env2.setChatFail((url) => (url.indexOf('spaces/inbox') >= 0 ? 503 : null));
+  claims.forEach((claim) => {
+    claudeReturns(env2, answer({ intent: 'CONCERN', reply: claim, concerns: [concern({ handoff: 'I\'ve passed this to Cyn.' })] }));
+    const r = env2.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'x ' + claim));
+    assert.match(r.text, /^I've noted this, but I couldn't reach the team just now/, claim);
+    assert.doesNotMatch(r.text, /passed|flagged|forwarded|i-pasa|Naipasa|Gipasa|let Ms|get back|emergency services for you/i, claim);
+  });
+  // Ordinary advice is left alone.
+  const env3 = setupEnv();
+  const advice = 'Ipasa mo ang leave form sa HR dalawang linggo bago. Reply to your client calmly. Let me help you write it.';
+  claudeReturns(env3, answer({ intent: 'QUESTION', reply: advice }));
+  assert.strictEqual(env3.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'how do I file leave and reply to my client?')).text, advice);
+});
+
+test('urgent safety notice: retried until posted, never posted twice, at most one per ticket', () => {
+  const env = withInbox(setupEnv());
+  // The concern card goes through, the urgent card does not.
+  env.setChatFail((url) => (/-urgent/.test(url) ? 503 : null));
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Please stay safe.',
+    concerns: [concern({ category: 'OPERATIONS', urgent_safety: true, handoff: 'I\'ve passed this to Mabelle.' })] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'A client threatened to come to my house'));
+  const urgentPosts = () => inboxPosts(env).filter((p) => /URGENT: SAFETY CONCERN/.test(cardText(p)));
+  assert.strictEqual(inboxPosts(env).length, 1);
+  // (The bot already retried once right after replying.)
+  assert.match(ticketRows(env)[0]['Urgent Notice'], /^Pending [12]$/);
+
+  env.setChatFail(null);
+  env.ctx.retryUndeliveredConcerns();
+  env.ctx.retryUndeliveredConcerns();
+  assert.strictEqual(urgentPosts().length, 1);
+  assert.strictEqual(ticketRows(env)[0]['Urgent Notice'], 'Posted');
+  assert.match(ticketRows(env)[0].History, /Urgent safety notice posted on retry \d/);
+
+  // Posted but not recorded (the run died): the retry gets "already exists" and posts nothing.
+  env.ctx.updateObject_(env.get('SHEETS.TICKETS'), 2, { 'Urgent Notice': 'Pending 2' });
+  env.ctx.retryUndeliveredConcerns();
+  assert.strictEqual(urgentPosts().length, 1);
+  assert.strictEqual(ticketRows(env)[0]['Urgent Notice'], 'Posted');
+
+  // An urgent follow-up on the same ticket: an UPDATE card, but no second urgent card.
+  const id = ticketRows(env)[0]['Ticket ID'];
+  claudeReturns(env, answer({ intent: 'FOLLOW_UP', reply: 'Thank you for telling me.',
+    concerns: [concern({ category: 'OPERATIONS', related_ticket: id, urgent_safety: true, handoff: 'I\'ve let Mabelle know.' })] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'He messaged me again saying he is outside'));
+  assert.strictEqual(inboxPosts(env).filter((p) => /UPDATE ON A CONCERN/.test(cardText(p))).length, 1);
+  assert.strictEqual(urgentPosts().length, 1);
+
+  // Concern card not delivered: the urgent card waits, then follows it, in that order.
+  const env2 = withInbox(setupEnv());
+  env2.setChatFail((url) => (url.indexOf('spaces/inbox') >= 0 ? 503 : null));
+  claudeReturns(env2, answer({ intent: 'CONCERN', reply: 'Please stay safe.', concerns: [concern({ urgent_safety: true })] }));
+  env2.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Someone is threatening me'));
+  assert.strictEqual(ticketRows(env2)[0]['Urgent Notice'], 'Pending');
+  env2.setChatFail(null);
+  env2.ctx.retryUndeliveredConcerns();
+  const headings = inboxPosts(env2).map((p) => cardText(p).match(/<b>([^<]+)<\/b>/)[1]);
+  assert.deepStrictEqual(headings, ['NEW CONCERN', 'URGENT: SAFETY CONCERN']);
+  assert.strictEqual(ticketRows(env2)[0]['Urgent Notice'], 'Posted');
 });
 
 let failed = 0;
