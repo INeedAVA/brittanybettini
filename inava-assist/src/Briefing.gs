@@ -116,6 +116,21 @@ function writeBriefing_(today, history) {
   return result.text;
 }
 
+/**
+ * Preview: writes today's briefing and sends it ONLY to the admin's private chat
+ * with Ask INAVA (Script Property ADMIN_EMAIL). Nothing is posted to any space,
+ * and it is not remembered as a real briefing. Run it from the Apps Script editor.
+ */
+function previewMorningBriefing() {
+  resetMemo_();
+  const admin = findUser_(getProp_('ADMIN_EMAIL'));
+  if (!admin || !admin.dmSpace) throw new Error('Send Ask INAVA a direct message first, from ' + getProp_('ADMIN_EMAIL') + '.');
+  const tz = Session.getScriptTimeZone();
+  const body = writeBriefing_(Utilities.formatDate(new Date(), tz, 'EEEE, d MMMM yyyy'), loadBriefingHistory_());
+  postCard_(admin.dmSpace, 'Preview · Good morning, team! · ' + Utilities.formatDate(new Date(), tz, 'EEEE, d MMMM'), body);
+  console.log('Preview sent to your private chat with Ask INAVA:\n\n' + body);
+}
+
 function loadBriefingHistory_() {
   try {
     return JSON.parse(getProp_('BRIEFING_HISTORY') || '[]');

@@ -367,6 +367,16 @@ test('morning briefing: posts to briefing spaces, falls back without search, rem
   env.ctx.postMorningBriefing();
   assert.strictEqual(calls, 2);
 
+  // Preview goes only to the admin's private chat and is not remembered.
+  env.props.ADMIN_EMAIL = 'britt@inava.test';
+  const historyBefore = env.props.BRIEFING_HISTORY;
+  const spacePosts = env.sent.chat.filter((c) => c.url.indexOf('spaces/internal') >= 0).length;
+  env.ctx.previewMorningBriefing();
+  assert.match(cardText(env.sent.chat.slice(-1)[0]), /^<font[^>]*><b>PREVIEW/);
+  assert.match(env.sent.chat.slice(-1)[0].url, /spaces\/dm-britt\/messages/);
+  assert.strictEqual(env.sent.chat.filter((c) => c.url.indexOf('spaces/internal') >= 0).length, spacePosts);
+  assert.strictEqual(env.props.BRIEFING_HISTORY, historyBefore);
+
   // Weekends: nothing at all.
   env.ctx.__weekday = '6';
   const before = env.sent.chat.length;
