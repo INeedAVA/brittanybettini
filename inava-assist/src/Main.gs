@@ -151,7 +151,8 @@ function handleMessage_(ev) {
   saveHistory_(user.email, ev.space.name, history, text, reply);
   audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED', ticketId: ticketId,
     detail: (decision.escalate ? decision.category + ' / ' + decision.priority : 'no escalation') +
-      (cited.length ? ' | sources: ' + cited.join('; ') : '') });
+      (cited.length ? ' | sources: ' + cited.join('; ') : '') +
+      (decision.usage ? ' | ' + decision.usage : '') });
   return reply + aiFooter_();
 }
 

@@ -17,7 +17,10 @@
 const APP_NAME = 'Ask INAVA';
 
 const DEFAULTS = {
-  CLAUDE_MODEL: 'claude-opus-5-5',
+  // Cheapest current model. For better answers on tricky or emotional messages,
+  // set Script Property CLAUDE_MODEL to claude-sonnet-5-5 (about 20x the cost)
+  // or claude-opus-5-5 (about 40x).
+  CLAUDE_MODEL: 'claude-haiku-5-5',
   // 'low' keeps replies fast enough for Google Chat's 30-second window.
   // Raise to 'medium' if answers feel too shallow.
   CLAUDE_EFFORT: 'low',
@@ -31,6 +34,14 @@ const DEFAULTS = {
   SHOW_SOURCES: 'off',
   // Show "Ask INAVA · AI assistant" under every reply ('on' / 'off').
   SHOW_AI_LABEL: 'off',
+};
+
+// USD per million tokens [input, output, cache read], used only to estimate cost in the
+// Audit Log. Cache writes are billed at 1.25x input. Check current prices at claude.com/pricing.
+const MODEL_PRICES = {
+  'claude-haiku-5-5': [0.10, 0.50, 0.01],
+  'claude-sonnet-5-5': [2, 10, 0.20],
+  'claude-opus-5-5': [4, 20, 0.20],
 };
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';

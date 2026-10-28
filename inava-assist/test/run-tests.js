@@ -199,13 +199,33 @@ test('Claude request is well formed (model, version, structured output, fallback
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'hello'));
   const req = env.sent.claude[0];
   assert.strictEqual(req.headers['anthropic-version'], '2026-10-21');
-  assert.strictEqual(req.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
-  assert.strictEqual(req.body.model, 'claude-opus-5-5');
-  assert.strictEqual(req.body.fallbacks, 'default');
+  // Default: the cheapest model, which has no server-side fallback.
+  assert.strictEqual(req.body.model, 'claude-haiku-5-5');
+  assert.ok(!('fallbacks' in req.body));
+  assert.ok(!('anthropic-beta' in req.headers));
   assert.strictEqual(req.body.output_config.format.type, 'json_schema');
   assert.strictEqual(req.body.output_config.effort, 'low');
   assert.deepStrictEqual(req.body.system[1].cache_control, { type: 'ephemeral' });
   assert.ok(!('temperature' in req.body));
+
+  // A bigger model, chosen in Script Properties, gets refusal fallbacks.
+  env.props.CLAUDE_MODEL = 'claude-opus-5-5';
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'hello again'));
+  const req2 = env.sent.claude[1];
+  assert.strictEqual(req2.body.model, 'claude-opus-5-5');
+  assert.strictEqual(req2.body.fallbacks, 'default');
+  assert.strictEqual(req2.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
+});
+
+test('token use and estimated cost are written to the Audit Log', () => {
+  const env = setupEnv();
+  env.setClaude(() => ({ body: { stop_reason: 'end_turn',
+    usage: { input_tokens: 200, cache_read_input_tokens: 20000, cache_creation_input_tokens: 0, output_tokens: 400 },
+    content: [{ type: 'text', text: JSON.stringify(answer({})) }] } }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'hello'));
+  const log = env.sheet('Audit Log').slice(-1)[0].join(' ');
+  // Haiku: 200*0.10 + 20000*0.01 + 400*0.50 = 420 per million = $0.0004
+  assert.match(log, /in 200, cache read 20000, cache write 0, out 400, ~\$0\.0004/);
 });
 
 test('manager asking in a VA space only gets VA-safe docs for that space\'s client', () => {
@@ -432,6 +452,7 @@ test('Workspace add-on event format is understood and answered in add-on format'
 
 test('fallbacks rejected by the API: retried once without them', () => {
   const env = setupEnv();
+  env.props.CLAUDE_MODEL = 'claude-opus-5-5';
   let calls = 0;
   env.setClaude((req) => {
     calls++;

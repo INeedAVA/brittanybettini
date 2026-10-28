@@ -21,7 +21,10 @@
 const APP_NAME = 'Ask INAVA';
 
 const DEFAULTS = {
-  CLAUDE_MODEL: 'claude-opus-5-5',
+  // Cheapest current model. For better answers on tricky or emotional messages,
+  // set Script Property CLAUDE_MODEL to claude-sonnet-5-5 (about 20x the cost)
+  // or claude-opus-5-5 (about 40x).
+  CLAUDE_MODEL: 'claude-haiku-5-5',
   // 'low' keeps replies fast enough for Google Chat's 30-second window.
   // Raise to 'medium' if answers feel too shallow.
   CLAUDE_EFFORT: 'low',
@@ -35,6 +38,14 @@ const DEFAULTS = {
   SHOW_SOURCES: 'off',
   // Show "Ask INAVA · AI assistant" under every reply ('on' / 'off').
   SHOW_AI_LABEL: 'off',
+};
+
+// USD per million tokens [input, output, cache read], used only to estimate cost in the
+// Audit Log. Cache writes are billed at 1.25x input. Check current prices at claude.com/pricing.
+const MODEL_PRICES = {
+  'claude-haiku-5-5': [0.10, 0.50, 0.01],
+  'claude-sonnet-5-5': [2, 10, 0.20],
+  'claude-opus-5-5': [4, 20, 0.20],
 };
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -648,7 +659,9 @@ function askClaude_(input) {
     messages: (input.history || []).concat([{ role: 'user', content: formatRequest_(input) }]),
   };
 
-  const useFallbacks = String(getProp_('CLAUDE_FALLBACKS')).toLowerCase() !== 'off';
+  // Haiku has no server-side fallback model, so the parameter is not sent for it.
+  const useFallbacks = String(getProp_('CLAUDE_FALLBACKS')).toLowerCase() !== 'off' &&
+    String(body.model).indexOf('haiku') < 0;
   if (useFallbacks) body.fallbacks = 'default';
 
   let res = postToClaude_(apiKey, body, useFallbacks);
@@ -663,14 +676,28 @@ function askClaude_(input) {
   }
 
   const message = JSON.parse(res.text);
-  if (message.stop_reason === 'refusal') return { refused: true };
+  const usage = estimateCost_(body.model, message.usage);
+  if (message.stop_reason === 'refusal') return { refused: true, usage: usage };
   if (message.stop_reason === 'max_tokens') throw new Error('Claude reply was cut off (max_tokens).');
 
   const text = (message.content || [])
     .filter(function (b) { return b.type === 'text'; })
     .map(function (b) { return b.text; })
     .join('');
-  return JSON.parse(text);
+  const decision = JSON.parse(text);
+  decision.usage = usage;
+  return decision;
+}
+
+/** Summarises token use and estimated cost of one request, e.g. "in 230, cache 21000/0, out 410, ~$0.0005". */
+function estimateCost_(model, u) {
+  if (!u) return '';
+  const p = MODEL_PRICES[model];
+  const input = u.input_tokens || 0, read = u.cache_read_input_tokens || 0;
+  const write = u.cache_creation_input_tokens || 0, out = u.output_tokens || 0;
+  const cost = p ? (input * p[0] + write * p[0] * 1.25 + read * p[2] + out * p[1]) / 1e6 : null;
+  return 'in ' + input + ', cache read ' + read + ', cache write ' + write + ', out ' + out +
+    (cost === null ? '' : ', ~$' + cost.toFixed(4));
 }
 
 /** POSTs to the Messages API, retrying once on overload / rate limit. */
@@ -1519,7 +1546,8 @@ function handleMessage_(ev) {
   saveHistory_(user.email, ev.space.name, history, text, reply);
   audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED', ticketId: ticketId,
     detail: (decision.escalate ? decision.category + ' / ' + decision.priority : 'no escalation') +
-      (cited.length ? ' | sources: ' + cited.join('; ') : '') });
+      (cited.length ? ' | sources: ' + cited.join('; ') : '') +
+      (decision.usage ? ' | ' + decision.usage : '') });
   return reply + aiFooter_();
 }
 

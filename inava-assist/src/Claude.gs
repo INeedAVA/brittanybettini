@@ -103,7 +103,9 @@ function askClaude_(input) {
     messages: (input.history || []).concat([{ role: 'user', content: formatRequest_(input) }]),
   };
 
-  const useFallbacks = String(getProp_('CLAUDE_FALLBACKS')).toLowerCase() !== 'off';
+  // Haiku has no server-side fallback model, so the parameter is not sent for it.
+  const useFallbacks = String(getProp_('CLAUDE_FALLBACKS')).toLowerCase() !== 'off' &&
+    String(body.model).indexOf('haiku') < 0;
   if (useFallbacks) body.fallbacks = 'default';
 
   let res = postToClaude_(apiKey, body, useFallbacks);
@@ -118,14 +120,28 @@ function askClaude_(input) {
   }
 
   const message = JSON.parse(res.text);
-  if (message.stop_reason === 'refusal') return { refused: true };
+  const usage = estimateCost_(body.model, message.usage);
+  if (message.stop_reason === 'refusal') return { refused: true, usage: usage };
   if (message.stop_reason === 'max_tokens') throw new Error('Claude reply was cut off (max_tokens).');
 
   const text = (message.content || [])
     .filter(function (b) { return b.type === 'text'; })
     .map(function (b) { return b.text; })
     .join('');
-  return JSON.parse(text);
+  const decision = JSON.parse(text);
+  decision.usage = usage;
+  return decision;
+}
+
+/** Summarises token use and estimated cost of one request, e.g. "in 230, cache 21000/0, out 410, ~$0.0005". */
+function estimateCost_(model, u) {
+  if (!u) return '';
+  const p = MODEL_PRICES[model];
+  const input = u.input_tokens || 0, read = u.cache_read_input_tokens || 0;
+  const write = u.cache_creation_input_tokens || 0, out = u.output_tokens || 0;
+  const cost = p ? (input * p[0] + write * p[0] * 1.25 + read * p[2] + out * p[1]) / 1e6 : null;
+  return 'in ' + input + ', cache read ' + read + ', cache write ' + write + ', out ' + out +
+    (cost === null ? '' : ', ~$' + cost.toFixed(4));
 }
 
 /** POSTs to the Messages API, retrying once on overload / rate limit. */

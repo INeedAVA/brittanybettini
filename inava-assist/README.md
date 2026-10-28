@@ -236,7 +236,7 @@ Do these **only when you decide to go live**. I won't do any of them without you
 
 | Property | Default | Meaning |
 |---|---|---|
-| `CLAUDE_MODEL` | `claude-opus-5-5` | Which Claude model answers |
+| `CLAUDE_MODEL` | `claude-haiku-5-5` | Which Claude model answers. Haiku is the cheapest; `claude-sonnet-5-5` or `claude-opus-5-5` give better answers at higher cost. |
 | `CLAUDE_EFFORT` | `low` | `low` is fastest. `medium` gives more thorough answers but may need the slow-reply path more often. |
 | `CLAUDE_FALLBACKS` | `default` | `off` disables the automatic retry on another model when a request is declined |
 | `DEDUP_HOURS` | `24` | How long a new message in the same category counts as a follow-up |
