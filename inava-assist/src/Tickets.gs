@@ -198,7 +198,8 @@ function handleEscalation_(decision, user, source) {
     const notified = notifyAssignee_(ticket, original, false);
     if (notified) {
       updateObject_(SHEETS.TICKETS, ticket.row, { 'Status': 'Assigned' });
-      appendHistory_(ticket, 'Assigned to ' + (ticket.assigneeName || ticket.assigneeEmail) + ' (private notification sent)');
+      appendHistory_(ticket, 'Assigned to ' + (ticket.assigneeName || ticket.assigneeEmail) +
+        (teamInbox_() ? ' (posted in the team chat)' : ' (private notification sent)'));
     } else {
       appendHistory_(ticket, 'Could not send private notification. Ticket left as New.');
       alertOperations_(ticket, user);
