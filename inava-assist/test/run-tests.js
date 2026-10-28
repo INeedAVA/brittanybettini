@@ -921,7 +921,7 @@ test('live language test: checks each case, writes results, never posts or creat
   assert.strictEqual(rows[0][0], 'Time');
   const total = rows[rows.length - 1];
   assert.strictEqual(total[1], 'TOTAL');
-  assert.match(total[11], /^\d+\/36 cases passed, estimated cost \$0\.0126/);
+  assert.match(total[11], /^\d+\/38 cases passed, estimated cost \$0\.0133/);
   assert.ok(rows.some((r) => r[10] === 'PASS') && rows.some((r) => r[10] === 'CHECK'));
   // A status case is answered by the real status code from the made-up record, not the AI's words.
   const statusRow = rows.find((r) => r[3] === 'Any update on my leave request?');
@@ -1383,6 +1383,98 @@ test('handoffs only say the concern was passed on: promises and pronouns are cut
     const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Client issue ' + i));
     assert.strictEqual(r.text, shown, handoff);
   });
+});
+
+test('status by topic: the one matching own concern is answered; two matches or none ask; never another VA\'s', () => {
+  const env = withInbox(setupEnv());
+  const raise = (email, uid, cat, text) => {
+    claudeReturns(env, answer({ intent: 'CONCERN', reply: '', concerns: [concern({ category: cat })] }));
+    env.ctx.onMessage(dmEvent(email, uid, text));
+  };
+  raise('va@inava.test', 'users/6', 'RECRUITMENT_HR', 'I need to file leave on Dec 24 for my sister\'s wedding');
+  raise('va@inava.test', 'users/6', 'CLIENT_CARE', 'My client Acme is unhappy with my weekly report');
+  raise('va3@inava.test', 'users/8', 'PAYROLL', 'My pay is late'); // someone else's
+  const ask = (email, uid, text) => {
+    claudeReturns(env, answer({ intent: 'STATUS_REQUEST', reply: '', status_ticket: 'AMBIGUOUS' }));
+    return env.ctx.onMessage(dmEvent(email, uid, text)).text;
+  };
+  // The AI was unsure, but only one of Vicky's concerns is about leave.
+  assert.match(ask('va@inava.test', 'users/6', 'Kumusta na yung leave ko?'), /^It's with Verge from our HR team \(passed on/);
+  // A client named in the message.
+  assert.match(ask('va@inava.test', 'users/6', 'Any update on the Acme thing?'), /^It's with Cyn from our Client Care team/);
+  // Vicky has no pay concern; Olive's pay concern is never used.
+  assert.match(ask('va@inava.test', 'users/6', 'update sa sahod ko?'), /Which one do you mean\?/);
+  assert.doesNotMatch(ask('va@inava.test', 'users/6', 'update sa sahod ko?'), /pay is late/);
+  // Two leave concerns: ask which.
+  raise('va@inava.test', 'users/6', 'RECRUITMENT_HR', 'Another leave request for Jan 2');
+  assert.match(ask('va@inava.test', 'users/6', 'Kumusta na yung leave ko?'), /^You've raised a few things with me\. Which one do you mean\?/);
+  assert.strictEqual(ticketRows(env).length, 4, 'status questions never create tickets');
+});
+
+test('payroll referrals keep the offer but name only "our Payroll Team"', () => {
+  const env = setupEnv();
+  env.sheet('Routing').find((r) => r[0] === 'RECRUITMENT_HR')[1] = 'Ms. Vergelyn';
+  env.ctx.resetMemo_();
+  const clean = (t) => env.ctx.cleanReply_(t);
+  assert.strictEqual(clean('The handbook doesn\'t say how overtime is paid, so would you like me to pass that question to Ms. Vergelyn from our HR team?'),
+    'The handbook doesn\'t say how overtime is paid, so would you like me to pass that question to our Payroll Team?');
+  assert.strictEqual(clean('Gusto mo bang ipasa ko ang tanong tungkol sa sahod kay Ms. Vergelyn?'),
+    'Gusto mo bang ipasa ko ang tanong tungkol sa sahod sa Payroll Team?');
+  assert.strictEqual(clean('Ms. Vergelyn from our HR team can help with your leave.'), 'Ms. Vergelyn from our HR team can help with your leave.');
+});
+
+test('urgent replies: AI phone numbers and hotlines are removed; only the neutral emergency line stays', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'I\'m really glad you told me.\n\n[HANDOFF]\n\n' +
+    'If you\'re in the Philippines, you can also contact the National Center for Mental Health Crisis Hotline at 1553 or 0917-899-8727. ' +
+    'Reach out now to someone you trust. If you are in danger, dial 911.',
+    concerns: [concern({ category: 'RECRUITMENT_HR', urgent_safety: true, sensitive_personal: true })] }));
+  const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I have been thinking about ending my life'));
+  assert.doesNotMatch(r.text, /1553|0917|911|Hotline/i);
+  assert.match(r.text, /Reach out now to someone you trust\./);
+  assert.match(r.text, /If you're in immediate danger, please contact your local emergency services or seek immediate help from someone nearby\./);
+  assert.strictEqual(inboxPosts(env).filter((p) => /URGENT: SAFETY CONCERN/.test(cardText(p))).length, 1);
+  // Ordinary numbers in advice are left alone.
+  assert.strictEqual(env.ctx.cleanReply_('Contact your client about the 2026 invoice at 10:30 on Nov 10.'), 'Contact your client about the 2026 invoice at 10:30 on Nov 10.');
+});
+
+test('no "I\'ll ask HR myself" claims in any language; offers to pass it on stay', () => {
+  const env = setupEnv();
+  const clean = (t) => env.ctx.cleanReply_(t);
+  ['mao nga pangutan-a lang nako ang HR kung unsa ang sakto.', 'Itatanong ko sa HR kung alin ang tama.',
+    'I\'ll check with HR and let you know.', 'Tatawagan ko si Ms. Cynthia para sa\'yo.']
+    .forEach((x) => assert.strictEqual(clean('Okay. ' + x), 'Okay.', x));
+  ['Kung gusto nimo, ipasa nako ni sa HR?', 'Gusto mo bang ipasa ko ito sa HR?', 'Would you like me to pass this to HR?',
+    'Pangutana ang imong client kung kanus-a ang meeting.', 'Itanong mo sa client mo kung kailan ang deadline.']
+    .forEach((x) => assert.strictEqual(clean(x), x, x));
+});
+
+test('an English handoff in a Bisaya reply triggers the one language retry', () => {
+  const env = withInbox(setupEnv());
+  let calls = 0;
+  env.setClaude(() => {
+    calls++;
+    const handoff = calls === 1 ? 'I\'ve let Ms. Cynthia from our Client Care team know about this update.' : 'Gipahibalo na nako si Ms. Cynthia sa among Client Care team bahin ani nga update.';
+    return { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answer({ intent: 'CONCERN',
+      reply: 'Lisod gyud ani, sabot ko. [HANDOFF] Samtang naghulat pa ka, ayaw sa una pag-promise og refund.',
+      concerns: [concern({ handoff })] })) }] } };
+  });
+  const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.'));
+  assert.strictEqual(calls, 2);
+  assert.match(r.text, /Gipahibalo na nako si Ms\. Cynthia/);
+});
+
+test('evaluator: whitespace-only changes are not findings, and each code change is named by its rule', () => {
+  const env = setupEnv();
+  env.sheet('Routing').find((r) => r[0] === 'RECRUITMENT_HR')[1] = 'Ms. Vergelyn';
+  env.ctx.resetMemo_();
+  const c = { intent: ['CASUAL'], n: [0, 0], lang: 'Mixed' };
+  const base = { intent: 'CASUAL', concerns: [], status_ticket: '', sources: [] };
+  assert.deepStrictEqual(Array.from(env.ctx.evalProblems_(c, Object.assign({}, base, { reply: 'Sige, sultihi lang ko.  ☺️' }))), []);
+  const p = Array.from(env.ctx.evalProblems_(c, Object.assign({}, base, { reply: 'Ask about how you are paid; I can pass it to Ms. Vergelyn if you want?' })));
+  assert.deepStrictEqual(p, ['AI reply linked a person to pay (name replaced by our Payroll Team)']);
+  const p2 = Array.from(env.ctx.evalProblems_(c, Object.assign({}, base, { reply: 'I\'ve passed this on.' })));
+  assert.deepStrictEqual(p2, ['AI reply claimed a handoff or action (removed by the safety filter)']);
 });
 
 let failed = 0;

@@ -176,7 +176,7 @@ function handleMessage_(ev, messageKey) {
   });
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
-    ? statusReply_(user, which || 'NONE', !ev.isDm) : '';
+    ? statusReply_(user, which || 'NONE', !ev.isDm, null, safeText) : '';
   let reply = composeReply_(decision, status, results, { inDm: ev.isDm });
 
   // Only cite documents this person was actually given.
@@ -212,7 +212,7 @@ const HANDOFF_CLAIMS = [
   // "I've passed this on", "I'll flag it", "I'm escalating this"
   new RegExp(ME + '(?:pass(?:ed|ing)?|forward(?:ed|ing)?|escalat(?:e|ed|ing)|flag(?:ged|ging)?|refer(?:red|ring)?|loop(?:ed|ing)? (?:you |this |it )?in|rais(?:e|ed|ing)|report(?:ed|ing)?)\\b', 'i'),
   // "I'll let the team know", "I've shared this with management", "I'm sending this to HR"
-  new RegExp(ME + '(?:sen[dt]\\w*|let\\w*|told|tell\\w*|notif\\w*|inform\\w*|shar(?:e|ed|ing)|alert\\w*|contact\\w*|reach\\w* out|messag\\w*|ping\\w*|ask\\w*)\\b[^.!?]*\\b(?:' + TEAM_WORDS + '|them|her|him)\\b', 'i'),
+  new RegExp(ME + '(?:sen[dt]\\w*|let\\w*|told|tell\\w*|notif\\w*|inform\\w*|shar(?:e|ed|ing)|alert\\w*|contact\\w*|reach\\w* out|messag\\w*|ping\\w*|ask\\w*|check(?:ing)? with|email\\w*|call\\w*)\\b[^.!?]*\\b(?:' + TEAM_WORDS + '|them|her|him)\\b', 'i'),
   // "I've added this to your earlier concern", "I've noted it for the team", "I've logged your request"
   new RegExp(ME + '(?:not(?:e|ed|ing)|add(?:ed|ing)?|log(?:ged|ging)?|record(?:ed|ing)?|document(?:ed|ing)?|updat(?:e|ed|ing)|includ(?:e|ed|ing)|attach(?:ed|ing)?|put|creat(?:e|ed|ing)|open(?:ed|ing)?|sav(?:e|ed|ing)|made a note|mak(?:e|ing) a note|kept a note|submit(?:ted|ting)?|fil(?:e|ed|ing))\\b[^.!?]*\\b' + CONCERN_OBJECT, 'i'),
   // "This has been passed to ...", "It's been added to your concern", "It's now with the team"
@@ -237,6 +237,9 @@ const HANDOFF_CLAIMS = [
     'naidagdag|idinagdag|idadagdag|idagdag|gidugang|i-?dugang|na-?note|gi-?note|i-?note|naitala|itinala|itatala|nailista|inilista|gilista|' +
     'i-?share|na-?share|gi-?share|ibinahagi|naibahagi|ibabahagi|na-?flag|gi-?flag|i-?flag|na-?record|gi-?record|ni-?record|na-?log|gi-?log)' +
     '\\b\\W*(?:na\\s+)?(?:ko|nako|namo|namin)\\b', 'i'),
+  // "pangutan-a lang nako ang HR", "i-kontak nako ang HR", "itatanong ko sa HR", "tatawagan ko si Ms. Cynthia"
+  new RegExp('\\b(?:pangutan-?a|pangutan-?on|pangutan-?an|i-?kontak|kontakon|i-?contact|tawagan|tawgan|itatanong|tatanungin|kakausapin|' +
+    'istoryahon|i-?message|imemessage|i-?email)\\b[^.!?]{0,15}\\b(?:ko|nako)\\b[^.!?]*\\b' + TEAM_WORDS, 'i'),
   /\bakong\s+(?:i-?pasa|i-?forward|i-?report|i-?escalate|ipahibalo|ipaabot|i-?share|i-?note|idugang|i-?dugang|i-?flag|i-?record)\b/i,
 ];
 // Offers stay: "Would you like me to pass this to Ms. Cynthia?" (but not "I've passed it, okay?")
@@ -258,10 +261,42 @@ function isPayrollNameLeak_(sentence) {
   return PAY_WORDS.test(sentence) && namesTeamMember_(sentence);
 }
 
-/** Removes claim sentences (and payroll name leaks) from one line of text, keeping everything else as written. */
+/**
+ * In a sentence about pay, replaces any team member's name (with an optional title and "from our
+ * HR team") by "our Payroll Team", so a useful referral stays but who handles pay is never shown.
+ * "pass it to Ms. Vergelyn from our HR team" -> "pass it to our Payroll Team";
+ * "ipasa kay Ms. Vergelyn" -> "ipasa sa Payroll Team".
+ */
+function anonymisePayroll_(sentence) {
+  let s = sentence;
+  teamMemberNames_().forEach(function (n) {
+    const re = new RegExp('(\\b(?:kay|kang|kina|ni|si)\\s+)?(?:\\b(?:Ms|Mr|Mrs|Sir|Ma\'?am)\\.?\\s+)?\\b' + n + '\\b(?:\\s+[A-Z][a-z]+)?' +
+      '(?:\\s+(?:from|of|sa|gikan sa|mula sa|ng)\\s+(?:our|the|among|aming|ating|amoang)\\s+[A-Za-z ]{1,25}?\\s+[Tt]eam)?', 'g');
+    s = s.replace(re, function (m, particle) { return particle ? 'sa Payroll Team' : PAYROLL_PUBLIC_NAME; });
+  });
+  return s.replace(/\bour our Payroll Team\b/g, PAYROLL_PUBLIC_NAME);
+}
+
+// Phone numbers or hotlines the AI may know from its own training are not approved and can be
+// wrong or out of date, so any sentence giving one is removed. The fixed, location-neutral
+// emergency line (EMERGENCY_TEXT) is added by the system for urgent concerns.
+const PHONE_GUIDANCE = /\b(?:call|dial|text|contact|reach|tawag|tawagan|tawga|i-?text)\b/i;
+const PHONE_NUMBER = /\+?\d(?:[\s().-]?\d){6,}/; // 7+ digits: a phone number, not a year or a time
+const EMERGENCY_SHORT_CODE = /\b(?:emergency|ambulance|police|rescue|dial)\b[^.!?]*\b\d{3,5}\b|\b\d{3,5}\b[^.!?]*\b(?:emergency|ambulance|police|rescue)\b/i;
+
+function isUnapprovedContact_(sentence) {
+  return /\b(?:hotline|helpline|help line|crisis line|lifeline)\b/i.test(sentence) ||
+    (PHONE_NUMBER.test(sentence) && PHONE_GUIDANCE.test(sentence)) || EMERGENCY_SHORT_CODE.test(sentence);
+}
+
+/**
+ * Removes claim sentences and unapproved phone numbers from one line of text, and anonymises
+ * payroll referrals, keeping everything else as written.
+ */
 function stripHandoffClaims_(text) {
   const sentences = String(text || '').split(/(?<=[.!?])(?<!\b(?:Ms|Mr|Mrs|Dr|Sr|Jr)\.)[ \t]+/);
-  return sentences.filter(function (s) { return !isHandoffClaim_(s) && !isPayrollNameLeak_(s); }).join(' ').trim();
+  return sentences.filter(function (s) { return !isHandoffClaim_(s) && !isUnapprovedContact_(s); })
+    .map(function (s) { return isPayrollNameLeak_(s) ? anonymisePayroll_(s) : s; }).join(' ').trim();
 }
 
 /** Removes the sentences for which test() is true, keeping paragraphs and bullet lines. */

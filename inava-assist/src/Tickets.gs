@@ -820,17 +820,52 @@ function statusLine_(t) {
   }
 }
 
+// Topics a VA may name when asking for an update. Each is checked against the message and
+// against the person's own concerns.
+const STATUS_TOPICS = [
+  { words: /\b(?:leave|leaves|day off|days off|time off|vacation|bakasyon|pto|absent|absence|liban|lumiban)\b/i },
+  { words: /\b(?:pay|paid|payroll|payslip|salary|wage|cut-?off|deductions?|sahod|sweldo|suweldo|nasweldohan|swelduhan|kinsenas|13th month)\b/i, category: 'PAYROLL' },
+];
+const NOT_A_CLIENT = /^(?:Any|What|When|How|Is|Are|Can|Hi|Hello|Update|Kumusta|Kamusta|Unsa|Asa|Ano|May|Naa|Wala|My|The|Ms|Mr|Sir|Ma|Please|Thanks|Salamat|Okay|Ok|Pwede|Ang|Yung|Sa|Ng|Ko|Ako|Nako|INAVA)$/;
+
+/** Own concerns that the message's topic points to (leave, pay, or a client named in it). */
+function topicMatches_(message, own) {
+  const text = String(message || '');
+  const found = [];
+  const add = function (t) { if (found.indexOf(t) < 0) found.push(t); };
+  STATUS_TOPICS.forEach(function (topic) {
+    if (!topic.words.test(text)) return;
+    own.forEach(function (t) {
+      if (topic.category ? t.category === topic.category : topic.words.test(t.summary)) add(t);
+    });
+  });
+  // A client (or other proper name) mentioned in both the message and a concern.
+  (text.match(/\b[A-Z][a-zA-Z]{2,}\b/g) || []).filter(function (w) { return !NOT_A_CLIENT.test(w); }).forEach(function (name) {
+    const re = new RegExp('\\b' + name + '\\b', 'i');
+    own.forEach(function (t) { if (re.test(t.summary)) add(t); });
+  });
+  return found;
+}
+
 /**
  * Answers "any update?" about the person's OWN concerns only.
  * @param {string} which Claude's status_ticket: an ID, "AMBIGUOUS" or "NONE"
  * @return {string} text for the reply, or '' when no status was asked for
  */
-function statusReply_(user, which, inSharedSpace, records) {
-  const id = String(which || '').trim().toUpperCase();
+function statusReply_(user, which, inSharedSpace, records, message) {
+  let id = String(which || '').trim().toUpperCase();
   if (!id) return '';
   // records: only for the language test, which uses made-up tickets instead of the sheet.
+  // Either way these are only the person's OWN tickets (looked up by their signed-in email).
   const own = records || recentTicketsFor_(user.email);
-  const t = own.filter(function (x) { return x.id.toUpperCase() === id; })[0];
+  let t = own.filter(function (x) { return x.id.toUpperCase() === id; })[0];
+  if (!t && message) {
+    // The AI could not tell which one: if the message names a topic (leave, pay, a client)
+    // and exactly ONE of their own concerns is about it, answer for that one.
+    const matches = topicMatches_(message, own);
+    if (matches.length === 1) t = matches[0];
+    else if (matches.length > 1) id = 'AMBIGUOUS';
+  }
   if (t) {
     if (inSharedSpace && t.category === 'PAYROLL') {
       return 'That one is about pay, so let\'s keep it private: send me a direct message and I\'ll tell you where it is.';
