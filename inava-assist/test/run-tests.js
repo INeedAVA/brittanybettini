@@ -326,6 +326,55 @@ test('one handler for everything: the VA is told the designated contact, the han
   assert.strictEqual(ticketRows(env)[0]['Assignee Email'], 'mabelle@inava.test');
 });
 
+test('morning briefing: posts to briefing spaces, falls back without search, remembers history', () => {
+  const env = setupEnv();
+  env.sheet('Spaces')[0][7] = 'Team Inbox';
+  env.sheet('Spaces')[0][8] = 'Morning Briefing';
+  env.sheet('Spaces').push(['spaces/internal', 'INAVA Internal', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '', 'NO', 'YES']);
+  env.sheet('Spaces').push(['spaces/off', 'Not approved', 'NO', 'MANAGEMENT', '', toSerial(new Date()), '', 'NO', 'YES']);
+  let calls = 0;
+  env.setClaude((req) => {
+    calls++;
+    if (calls === 1) {
+      assert.strictEqual(req.body.model, 'claude-sonnet-5-5');
+      assert.strictEqual(req.body.tools[0].type, 'web_search_20260209');
+      assert.match(req.body.system, /PH & US alerts/);
+      return { body: { stop_reason: 'pause_turn', content: [{ type: 'server_tool_use', id: 's1', name: 'web_search', input: {} }] } };
+    }
+    if (calls === 2) {
+      assert.strictEqual(req.body.messages[1].role, 'assistant', 'paused turn is sent back');
+      return { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '💬 Quote\n💡 VA tip: tip\n🔥 Trending for VAs:\n- item (source: x.com)\n🌏 PH & US alerts:\n- No major alerts today. Stay safe!' }] } };
+    }
+    throw new Error('unexpected call');
+  });
+  env.ctx.dailyMorning();
+  const posts = env.sent.chat.filter((c) => c.url.indexOf('spaces/internal/messages') >= 0);
+  assert.strictEqual(posts.length, 1);
+  assert.match(cardText(posts[0]), /GOOD MORNING, TEAM!/);
+  assert.match(cardText(posts[0]), /PH &amp; US alerts/);
+  assert.ok(!env.sent.chat.some((c) => c.url.indexOf('spaces/off') >= 0), 'unapproved spaces get nothing');
+  assert.match(env.props.BRIEFING_HISTORY, /VA tip: tip/);
+
+  // Search not available: second attempt without the tool.
+  calls = 0;
+  env.setClaude((req) => {
+    calls++;
+    if (req.body.tools) return { code: 400, body: { error: { message: 'web search is disabled for this organization' } } };
+    assert.match(req.body.system, /do not repeat/i);
+    assert.match(req.body.system, /VA tip: tip/, 'recent briefings are passed in');
+    return { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '💬 Another quote' }] } };
+  });
+  env.ctx.postMorningBriefing();
+  assert.strictEqual(calls, 2);
+
+  // Weekends: nothing at all.
+  env.ctx.__weekday = '6';
+  const before = env.sent.chat.length;
+  env.ctx.dailyMorning();
+  assert.strictEqual(env.sent.chat.length, before);
+  assert.strictEqual(env.sent.chat.filter((c) => c.url.indexOf('spaces/internal/messages') >= 0).length, 2);
+});
+
 test('payroll: figures are stripped and only the cleared payroll contact gets details', () => {
   const env = setupEnv();
   claudeReturns(env, answer({ escalate: true, category: 'PAYROLL', priority: 'URGENT',

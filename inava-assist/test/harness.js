@@ -158,6 +158,7 @@ function createEnv() {
         const iso = d.toISOString();
         if (fmt === 'yyMMdd') return iso.slice(2, 4) + iso.slice(5, 7) + iso.slice(8, 10);
         if (fmt === 'yyyy-MM-dd HH:mm:ss') return iso.slice(0, 10) + ' ' + iso.slice(11, 19);
+        if (fmt === 'u') return ctx.__weekday || '3';
         return iso;
       },
       parseDate: (text) => new Date(text.replace(' ', 'T') + 'Z'),

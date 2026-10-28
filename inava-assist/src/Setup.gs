@@ -58,6 +58,8 @@ function setup() {
   dropdown(SHEETS.USERS, 'Active', ['YES', 'NO']);
   dropdown(SHEETS.SPACES, 'Approved', ['YES', 'NO']);
   dropdown(SHEETS.SPACES, 'Audience', ['VA', 'HR', 'MANAGEMENT']);
+  dropdown(SHEETS.SPACES, 'Team Inbox', ['YES', 'NO']);
+  dropdown(SHEETS.SPACES, 'Morning Briefing', ['YES', 'NO']);
   dropdown(SHEETS.ROUTING, 'Payroll Cleared', ['YES', 'NO']);
   dropdown(SHEETS.KNOWLEDGE, 'Status', ['Approved', 'Draft', 'Retired']);
   dropdown(SHEETS.TICKETS, 'Status', STATUSES);
