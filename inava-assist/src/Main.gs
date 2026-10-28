@@ -2,11 +2,11 @@
  * Google Chat entry points.
  *
  * Google Chat calls these functions directly:
- *   onMessage          someone @mentions INAVA Assist in a space, or messages it directly
- *   onAddedToSpace     INAVA Assist is added to a space or a direct message
- *   onRemovedFromSpace INAVA Assist is removed from a space
+ *   onMessage          someone @mentions Ask INAVA in a space, or messages it directly
+ *   onAddedToSpace     Ask INAVA is added to a space or a direct message
+ *   onRemovedFromSpace Ask INAVA is removed from a space
  *
- * In shared spaces Google Chat only sends INAVA Assist the messages that
+ * In shared spaces Google Chat only sends Ask INAVA the messages that
  * @mention it, so it never answers ordinary conversation.
  *
  * Both Chat event formats are supported: the classic Chat app format and the
@@ -42,7 +42,7 @@ function onAddedToSpace(event) {
   const space = registerSpace_(ev.space.name, ev.space.displayName, ev.user.email);
   audit_({ email: ev.user.email, space: ev.space.name, action: 'ADDED_TO_SPACE', detail: ev.space.displayName });
   if (!space.approved) {
-    return reply_(ev, 'Hi, I\'m *INAVA Assist*, an AI assistant for I Need A VA. ' +
+    return reply_(ev, 'Hi, I\'m Ask INAVA, an AI assistant for I Need A VA. ' +
       'I\'m not switched on in this space yet: an INAVA administrator needs to approve it first. ' +
       'Until then I won\'t answer here.');
   }
@@ -60,10 +60,10 @@ function onRemovedFromSpace(event) {
 
 // Optional label under every reply. Off by default: Chat already marks the bot as an "App",
 // and the welcome message says it is an AI. Set Script Property SHOW_AI_LABEL = on to show it.
-const AI_FOOTER_TEXT = '\n\n_INAVA Assist \u00B7 AI assistant_';
+const AI_FOOTER_TEXT = '\n\n_Ask INAVA \u00B7 AI assistant_';
 
 const WELCOME_TEXT = [
-  'Hi! I\'m INAVA Assist, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
+  'Hi! I\'m Ask INAVA, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
   '',
   '- Ask me anything about how things work at INAVA: policies, procedures, leave, schedules. I\'ll tell you which document my answer comes from.',
   '- If something\'s wrong or you need a person, just tell me. I\'ll pass it privately to the right person on the team and they\'ll get back to you.',
@@ -89,7 +89,7 @@ function handleMessage_(ev) {
   const user = findUser_(ev.user.email);
   if (!user || !user.active || !user.role) {
     audit_({ email: ev.user.email, space: ev.space.name, action: 'UNREGISTERED_USER' });
-    return 'Hi, I\'m INAVA Assist, an AI assistant.' + NOT_REGISTERED_TEXT;
+    return 'Hi, I\'m Ask INAVA, an AI assistant.' + NOT_REGISTERED_TEXT;
   }
   if (ev.isDm) rememberUserChatIds_(user, ev.user.name, ev.space.name);
 

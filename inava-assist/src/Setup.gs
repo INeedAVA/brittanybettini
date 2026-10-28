@@ -132,7 +132,7 @@ function checkSetup() {
       if (!r || !r.email || /REPLACE-ME/i.test(r.email)) { problems.push(cat + ': set a real Assignee Email'); return; }
       const u = findUser_(r.email);
       if (!u || !u.active) problems.push(cat + ': ' + r.email + ' must be in Users with Active = YES');
-      else if (!u.dmSpace && !u.chatUserId) problems.push(cat + ': ' + r.email + ' must send INAVA Assist one direct message (e.g. "hi")');
+      else if (!u.dmSpace && !u.chatUserId) problems.push(cat + ': ' + r.email + ' must send Ask INAVA one direct message (e.g. "hi")');
       if (cat === 'PAYROLL' && !r.payrollCleared) problems.push('PAYROLL: Payroll Cleared should be YES for the payroll contact');
     });
     if (problems.length) throw new Error(problems.join('; '));
@@ -154,7 +154,7 @@ function checkSetup() {
     return spaces.length + ' known, ' + approved.length + ' approved';
   });
 
-  console.log(['INAVA Assist setup check', ''].concat(ok, todo.length ? [''].concat(todo) : ['', 'Everything is set up.'],
+  console.log(['Ask INAVA setup check', ''].concat(ok, todo.length ? [''].concat(todo) : ['', 'Everything is set up.'],
     ['', 'Reminder: the hourly trigger for checkOverdueTickets is set under Triggers (clock icon).']).join('\n'));
 }
 

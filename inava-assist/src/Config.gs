@@ -1,5 +1,5 @@
 /**
- * INAVA Assist - configuration.
+ * Ask INAVA - configuration.
  *
  * Nothing in this file needs to change for day-to-day operation. Routing,
  * users, spaces and knowledge documents all live in the control spreadsheet
@@ -14,7 +14,7 @@
  *   CLAUDE_MODEL, CLAUDE_EFFORT, CLAUDE_FALLBACKS, DEDUP_HOURS
  */
 
-const APP_NAME = 'INAVA Assist';
+const APP_NAME = 'Ask INAVA';
 
 const DEFAULTS = {
   CLAUDE_MODEL: 'claude-opus-5-5',
@@ -29,7 +29,7 @@ const DEFAULTS = {
   DEDUP_HOURS: '24',
   // Show "Source: <document>" under answers ('on' / 'off').
   SHOW_SOURCES: 'off',
-  // Show "INAVA Assist · AI assistant" under every reply ('on' / 'off').
+  // Show "Ask INAVA · AI assistant" under every reply ('on' / 'off').
   SHOW_AI_LABEL: 'off',
 };
 
@@ -44,7 +44,7 @@ const SYNC_REPLY_BUDGET_MS = 24000;
 // Upper bound on knowledge base text sent to Claude per question.
 const MAX_KNOWLEDGE_CHARS = 600000;
 
-// INAVA Assist serves VAs and the internal team. Clients are outside the Workspace and never use it.
+// Ask INAVA serves VAs and the internal team. Clients are outside the Workspace and never use it.
 const ROLES = ['VA', 'HR', 'MANAGEMENT', 'ADMIN'];
 
 // Roles that may run ticket commands for tickets they are not assigned to.

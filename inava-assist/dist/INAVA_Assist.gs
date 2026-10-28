@@ -3,7 +3,7 @@
 // ===== Config.gs =====
 
 /**
- * INAVA Assist - configuration.
+ * Ask INAVA - configuration.
  *
  * Nothing in this file needs to change for day-to-day operation. Routing,
  * users, spaces and knowledge documents all live in the control spreadsheet
@@ -18,7 +18,7 @@
  *   CLAUDE_MODEL, CLAUDE_EFFORT, CLAUDE_FALLBACKS, DEDUP_HOURS
  */
 
-const APP_NAME = 'INAVA Assist';
+const APP_NAME = 'Ask INAVA';
 
 const DEFAULTS = {
   CLAUDE_MODEL: 'claude-opus-5-5',
@@ -33,7 +33,7 @@ const DEFAULTS = {
   DEDUP_HOURS: '24',
   // Show "Source: <document>" under answers ('on' / 'off').
   SHOW_SOURCES: 'off',
-  // Show "INAVA Assist · AI assistant" under every reply ('on' / 'off').
+  // Show "Ask INAVA · AI assistant" under every reply ('on' / 'off').
   SHOW_AI_LABEL: 'off',
 };
 
@@ -48,7 +48,7 @@ const SYNC_REPLY_BUDGET_MS = 24000;
 // Upper bound on knowledge base text sent to Claude per question.
 const MAX_KNOWLEDGE_CHARS = 600000;
 
-// INAVA Assist serves VAs and the internal team. Clients are outside the Workspace and never use it.
+// Ask INAVA serves VAs and the internal team. Clients are outside the Workspace and never use it.
 const ROLES = ['VA', 'HR', 'MANAGEMENT', 'ADMIN'];
 
 // Roles that may run ticket commands for tickets they are not assigned to.
@@ -548,7 +548,7 @@ function refreshKnowledgeBase() {
  */
 
 const SYSTEM_PROMPT = [
-  'You are INAVA Assist, the AI assistant of I Need A VA (INAVA), a virtual assistant agency. You answer questions from INAVA\'s virtual assistants (VAs) and its internal team (HR and management) inside Google Chat, and you spot concerns that a person on the INAVA team needs to handle. INAVA\'s clients do not use this chat; concerns about clients reach you through VAs and staff.',
+  'You are Ask INAVA, the AI assistant of I Need A VA (INAVA), a virtual assistant agency. You answer questions from INAVA\'s virtual assistants (VAs) and its internal team (HR and management) inside Google Chat, and you spot concerns that a person on the INAVA team needs to handle. INAVA\'s clients do not use this chat; concerns about clients reach you through VAs and staff.',
   '',
   'Who you are',
   '- You are an AI assistant, not a person. If anyone asks, or seems to think they are talking to a person, say plainly that you are an AI.',
@@ -866,7 +866,7 @@ function findDirectMessageSpace_(chatUserId) {
 
 /**
  * Sends a private message to a person listed in the Users tab.
- * They must have messaged INAVA Assist at least once (Google requires the DM to exist).
+ * They must have messaged Ask INAVA at least once (Google requires the DM to exist).
  * @return {boolean} true if sent
  */
 function sendPrivateMessage_(email, text) {
@@ -881,7 +881,7 @@ function sendPrivateMessage_(email, text) {
     if (dmSpace) rememberUserChatIds_(user, '', dmSpace);
   }
   if (!dmSpace) {
-    console.warn('Cannot notify ' + email + ': they have not messaged INAVA Assist yet.');
+    console.warn('Cannot notify ' + email + ': they have not messaged Ask INAVA yet.');
     return false;
   }
   postMessage_(dmSpace, text);
@@ -1305,11 +1305,11 @@ function checkOverdueTickets() {
  * Google Chat entry points.
  *
  * Google Chat calls these functions directly:
- *   onMessage          someone @mentions INAVA Assist in a space, or messages it directly
- *   onAddedToSpace     INAVA Assist is added to a space or a direct message
- *   onRemovedFromSpace INAVA Assist is removed from a space
+ *   onMessage          someone @mentions Ask INAVA in a space, or messages it directly
+ *   onAddedToSpace     Ask INAVA is added to a space or a direct message
+ *   onRemovedFromSpace Ask INAVA is removed from a space
  *
- * In shared spaces Google Chat only sends INAVA Assist the messages that
+ * In shared spaces Google Chat only sends Ask INAVA the messages that
  * @mention it, so it never answers ordinary conversation.
  *
  * Both Chat event formats are supported: the classic Chat app format and the
@@ -1345,7 +1345,7 @@ function onAddedToSpace(event) {
   const space = registerSpace_(ev.space.name, ev.space.displayName, ev.user.email);
   audit_({ email: ev.user.email, space: ev.space.name, action: 'ADDED_TO_SPACE', detail: ev.space.displayName });
   if (!space.approved) {
-    return reply_(ev, 'Hi, I\'m *INAVA Assist*, an AI assistant for I Need A VA. ' +
+    return reply_(ev, 'Hi, I\'m Ask INAVA, an AI assistant for I Need A VA. ' +
       'I\'m not switched on in this space yet: an INAVA administrator needs to approve it first. ' +
       'Until then I won\'t answer here.');
   }
@@ -1363,10 +1363,10 @@ function onRemovedFromSpace(event) {
 
 // Optional label under every reply. Off by default: Chat already marks the bot as an "App",
 // and the welcome message says it is an AI. Set Script Property SHOW_AI_LABEL = on to show it.
-const AI_FOOTER_TEXT = '\n\n_INAVA Assist \u00B7 AI assistant_';
+const AI_FOOTER_TEXT = '\n\n_Ask INAVA \u00B7 AI assistant_';
 
 const WELCOME_TEXT = [
-  'Hi! I\'m INAVA Assist, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
+  'Hi! I\'m Ask INAVA, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
   '',
   '- Ask me anything about how things work at INAVA: policies, procedures, leave, schedules. I\'ll tell you which document my answer comes from.',
   '- If something\'s wrong or you need a person, just tell me. I\'ll pass it privately to the right person on the team and they\'ll get back to you.',
@@ -1392,7 +1392,7 @@ function handleMessage_(ev) {
   const user = findUser_(ev.user.email);
   if (!user || !user.active || !user.role) {
     audit_({ email: ev.user.email, space: ev.space.name, action: 'UNREGISTERED_USER' });
-    return 'Hi, I\'m INAVA Assist, an AI assistant.' + NOT_REGISTERED_TEXT;
+    return 'Hi, I\'m Ask INAVA, an AI assistant.' + NOT_REGISTERED_TEXT;
   }
   if (ev.isDm) rememberUserChatIds_(user, ev.user.name, ev.space.name);
 
@@ -1689,7 +1689,7 @@ function checkSetup() {
       if (!r || !r.email || /REPLACE-ME/i.test(r.email)) { problems.push(cat + ': set a real Assignee Email'); return; }
       const u = findUser_(r.email);
       if (!u || !u.active) problems.push(cat + ': ' + r.email + ' must be in Users with Active = YES');
-      else if (!u.dmSpace && !u.chatUserId) problems.push(cat + ': ' + r.email + ' must send INAVA Assist one direct message (e.g. "hi")');
+      else if (!u.dmSpace && !u.chatUserId) problems.push(cat + ': ' + r.email + ' must send Ask INAVA one direct message (e.g. "hi")');
       if (cat === 'PAYROLL' && !r.payrollCleared) problems.push('PAYROLL: Payroll Cleared should be YES for the payroll contact');
     });
     if (problems.length) throw new Error(problems.join('; '));
@@ -1711,7 +1711,7 @@ function checkSetup() {
     return spaces.length + ' known, ' + approved.length + ' approved';
   });
 
-  console.log(['INAVA Assist setup check', ''].concat(ok, todo.length ? [''].concat(todo) : ['', 'Everything is set up.'],
+  console.log(['Ask INAVA setup check', ''].concat(ok, todo.length ? [''].concat(todo) : ['', 'Everything is set up.'],
     ['', 'Reminder: the hourly trigger for checkOverdueTickets is set under Triggers (clock icon).']).join('\n'));
 }
 

@@ -1,4 +1,4 @@
-// End-to-end tests of INAVA Assist's logic against fake Google services.
+// End-to-end tests of Ask INAVA's logic against fake Google services.
 // Run: node test/run-tests.js
 'use strict';
 
@@ -92,7 +92,7 @@ function spaceEvent(email, userId, spaceName, text) {
     type: 'MESSAGE',
     user: { name: userId, email },
     space: { name: spaceName, type: 'ROOM', displayName: spaceName },
-    message: { text: '@INAVA Assist ' + text, argumentText: ' ' + text, sender: { type: 'HUMAN' },
+    message: { text: '@Ask INAVA ' + text, argumentText: ' ' + text, sender: { type: 'HUMAN' },
       thread: { name: spaceName + '/threads/abc' } },
   };
 }

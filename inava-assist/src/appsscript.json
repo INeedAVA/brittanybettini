@@ -7,7 +7,7 @@
   ],
   "addOns": {
     "common": {
-      "name": "INAVA Assist",
+      "name": "Ask INAVA",
       "logoUrl": "https://developers.google.com/chat/images/quickstart-app-avatar.png"
     },
     "chat": {}

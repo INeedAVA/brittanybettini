@@ -1,4 +1,4 @@
-# INAVA Assist: Google Chat AI assistant for I Need A VA
+# Ask INAVA (project name: INAVA Assist): Google Chat AI assistant for I Need A VA
 
 INAVA Assist runs inside Google Chat. People @mention it in approved spaces, or send it a direct
 message. It answers from INAVA's approved documents and names the document it used. When a
@@ -59,7 +59,7 @@ admin approval.
 
 ### Step 1: Create the Apps Script project
 1. Go to [script.google.com](https://script.google.com) and click **New project**.
-2. Click "Untitled project" at the top and rename it **INAVA Assist**.
+2. Click "Untitled project" at the top and rename it **Ask INAVA**.
 3. Click the **gear icon (Project Settings)** on the left. Tick **Show "appsscript.json"
    manifest file in editor**.
 4. Click the **< > (Editor)** icon. Open `appsscript.json`, delete everything in it, and
@@ -160,7 +160,7 @@ the only account (besides you) that can open the control sheet and the knowledge
 
 ### Step 8: Say hello and check everything
 1. Open [chat.google.com](https://chat.google.com). Click **New chat**, search for
-   **INAVA Assist**, and send it **hi**.
+   **Ask INAVA**, and send it **hi**.
    - The first time, Google may show **"INAVA Assist requires configuration"**. Click
      **Configure** and allow it. Each person does this once. It only lets the bot connect to
      the AI service; it gives the bot no access to their own files.
@@ -180,17 +180,17 @@ Add the bot: open the space name, then **Apps & integrations > Add apps > INAVA 
 
 | # | Do this | Expected result |
 |---|---|---|
-| 1 | Add the bot to the TEST space, then `@INAVA Assist hello` | "I'm not switched on in this space yet". The Spaces tab shows the space with Approved = NO. **This proves the go-live gate works.** |
+| 1 | Add the bot to the TEST space, then `@Ask INAVA hello` | "I'm not switched on in this space yet". The Spaces tab shows the space with Approved = NO. **This proves the go-live gate works.** |
 | 2 | In the Spaces tab, set Approved = **YES** and Audience = **MANAGEMENT**, then mention it again | A normal answer, ending with "INAVA Assist · AI assistant" |
 | 3 | Post a message in the space **without** @mentioning it | No reply |
-| 4 | `@INAVA Assist what is our leave policy?` | Answer from your test doc, ending with _Source: TEST - Leave Policy_ |
+| 4 | `@Ask INAVA what is our leave policy?` | Answer from your test doc, ending with _Source: TEST - Leave Policy_ |
 | 5 | Ask something your docs don't cover, such as "What is the overtime rate?" | It says it has no approved answer and offers to pass it on. It doesn't make anything up. |
 | 6 | Set the space's Audience to **VA**. Ask about a document whose Access is `HR, MANAGEMENT` | It doesn't use that document, because VAs can read the answer |
-| 7 | `@INAVA Assist my client is upset I missed today's meeting` | A friendly reply naming who it passed it to (no ticket numbers). A new row in Tickets. **You get a private DM** with the summary and a link. |
+| 7 | `@Ask INAVA my client is upset I missed today's meeting` | A friendly reply naming who it passed it to (no ticket numbers). A new row in Tickets. **You get a private DM** with the summary and a link. |
 | 8 | Say the same thing again | "I've added this to your open concern…", and no new ticket |
 | 9 | In your DM with the bot: `I wasn't paid $500 this cycle` | A Payroll ticket. The summary shows **[amount removed]**. The DM goes only to the Payroll contact. |
 | 10 | In your DM: `my tickets`, then `done INAVA-…-001 spoke to the client` (copy the ref from the notification) | A list, then "marked as done". The Tickets tab and History update. |
-| 11 | In the space: `@INAVA Assist done INAVA-…-001` | It asks you to send it in a direct message instead |
+| 11 | In the space: `@Ask INAVA done INAVA-…-001` | It asks you to send it in a direct message instead |
 | 12 | In the Tickets tab, set a ticket's **Due By** to yesterday, then run **checkOverdueTickets** in the editor | You get an overdue reminder by DM |
 | 13 | Remove yourself from Users (or set Active = NO) and message the bot | "I don't have you on INAVA's approved list" |
 | 14 | `Are you a real person?` | It says clearly that it's an AI |

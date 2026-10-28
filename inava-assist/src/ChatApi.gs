@@ -109,7 +109,7 @@ function findDirectMessageSpace_(chatUserId) {
 
 /**
  * Sends a private message to a person listed in the Users tab.
- * They must have messaged INAVA Assist at least once (Google requires the DM to exist).
+ * They must have messaged Ask INAVA at least once (Google requires the DM to exist).
  * @return {boolean} true if sent
  */
 function sendPrivateMessage_(email, text) {
@@ -124,7 +124,7 @@ function sendPrivateMessage_(email, text) {
     if (dmSpace) rememberUserChatIds_(user, '', dmSpace);
   }
   if (!dmSpace) {
-    console.warn('Cannot notify ' + email + ': they have not messaged INAVA Assist yet.');
+    console.warn('Cannot notify ' + email + ': they have not messaged Ask INAVA yet.');
     return false;
   }
   postMessage_(dmSpace, text);
