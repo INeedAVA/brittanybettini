@@ -33,6 +33,18 @@ const DEFAULTS = {
   SHOW_AI_LABEL: 'off',
 };
 
+// Notes about known gaps or conflicts in the approved documents, sent with them to the AI.
+// Override with Script Property POLICY_NOTES (set it to "none" once HR has fixed the documents).
+const DEFAULT_POLICY_NOTES = [
+  '- Leave notice: the handbook gives two different notice periods. The Leave Process section says "file two (2) weeks before the leave date" (filing late: not permitted to take the leave, and not eligible for the perfect attendance bonus). Another section says to notify Workforce and HR "at least ten (10) business days in advance". HR has not yet confirmed which applies. When asked about leave notice, mention both as written, say HR confirms which applies, and suggest filing as early as possible. For a request that is already late or close to the date, do not say it will be refused or allowed: say HR decides and offer to pass it to HR.',
+].join('\n');
+
+function policyNotes_() {
+  const v = getProp_('POLICY_NOTES');
+  if (v && String(v).trim().toLowerCase() === 'none') return '';
+  return v || DEFAULT_POLICY_NOTES;
+}
+
 // USD per million tokens [input, output, cache read], used only to estimate cost in the
 // Audit Log. Cache writes are billed at 1.25x input. Check current prices at claude.com/pricing.
 const MODEL_PRICES = {

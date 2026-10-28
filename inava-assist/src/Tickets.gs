@@ -709,10 +709,11 @@ function statusLine_(t) {
  * @param {string} which Claude's status_ticket: an ID, "AMBIGUOUS" or "NONE"
  * @return {string} text for the reply, or '' when no status was asked for
  */
-function statusReply_(user, which, inSharedSpace) {
+function statusReply_(user, which, inSharedSpace, records) {
   const id = String(which || '').trim().toUpperCase();
   if (!id) return '';
-  const own = recentTicketsFor_(user.email);
+  // records: only for the language test, which uses made-up tickets instead of the sheet.
+  const own = records || recentTicketsFor_(user.email);
   const t = own.filter(function (x) { return x.id.toUpperCase() === id; })[0];
   if (t) {
     if (inSharedSpace && t.category === 'PAYROLL') {
