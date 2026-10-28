@@ -5,7 +5,7 @@
  * MANAGEMENT), an optional Client Account, and a Status. Only rows with
  * Status = Approved are ever used. To retire a document, change its Status.
  *
- * Each document must be a Google Doc shared with the service account (Viewer).
+ * Each document must be a Google Doc or a plain .txt file shared with the service account (Viewer).
  * Sharing one Drive folder of approved documents with it is easiest. Nothing the
  * service account cannot open is ever used.
  *
@@ -51,7 +51,7 @@ function loadKnowledgeFor_(ctx) {
 }
 
 function docIdFromUrl_(url) {
-  const m = String(url).match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  const m = String(url).match(/\/d\/([a-zA-Z0-9_-]{20,})/) || String(url).match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
   if (m) return m[1];
   if (/^[a-zA-Z0-9_-]{20,}$/.test(url)) return url;
   return null;
@@ -98,20 +98,24 @@ function getDocText_(url) {
   return text;
 }
 
-/** Exports a Google Doc as plain text, as the service account. */
+/** Reads a Google Doc (exported as text) or a plain .txt file, as the service account. */
 function readDocText_(id) {
-  const resp = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id) +
-    '/export?mimeType=text%2Fplain', {
-    headers: { Authorization: 'Bearer ' + getServiceToken_(DATA_SCOPES) },
-    muteHttpExceptions: true,
-  });
-  const code = resp.getResponseCode();
-  if (code !== 200) {
-    throw new Error('HTTP ' + code + (code === 404 || code === 403
-      ? ' (share the document with the service account as Viewer, and make sure it is a Google Doc)'
-      : ': ' + resp.getContentText().slice(0, 200)));
+  const auth = { Authorization: 'Bearer ' + getServiceToken_(DATA_SCOPES) };
+  const base = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id);
+  const meta = UrlFetchApp.fetch(base + '?fields=mimeType&supportsAllDrives=true', { headers: auth, muteHttpExceptions: true });
+  if (meta.getResponseCode() !== 200) {
+    throw new Error('HTTP ' + meta.getResponseCode() + ' (share the file with the service account as Viewer)');
   }
-  return resp.getContentText();
+  const mimeType = JSON.parse(meta.getContentText()).mimeType;
+  let url;
+  if (mimeType === 'application/vnd.google-apps.document') url = base + '/export?mimeType=text%2Fplain';
+  else if (mimeType === 'text/plain') url = base + '?alt=media&supportsAllDrives=true';
+  else throw new Error('Unsupported file type ' + mimeType + ': use a Google Doc or a .txt file');
+  const resp = UrlFetchApp.fetch(url, { headers: auth, muteHttpExceptions: true });
+  if (resp.getResponseCode() !== 200) {
+    throw new Error('HTTP ' + resp.getResponseCode() + ': ' + resp.getContentText().slice(0, 200));
+  }
+  return resp.getContentText('UTF-8');
 }
 
 /** Clears cached document text so the next question re-reads every document. */

@@ -135,8 +135,13 @@ function createEnv() {
         }
         if (url.indexOf('sheets.googleapis.com') >= 0) return sheetsApi(url, opts);
         if (url.indexOf('www.googleapis.com/drive/v3/files/') >= 0) {
-          const id = decodeURIComponent(url.split('/files/')[1].split('/')[0]);
-          return id in docs ? response(200, docs[id]) : response(404, 'not found');
+          // docs[id] is a string (a Google Doc) or {mimeType, text} (e.g. a .txt file).
+          const id = decodeURIComponent(url.split('/files/')[1].split(/[/?]/)[0]);
+          if (!(id in docs)) return response(404, 'not found');
+          const doc = typeof docs[id] === 'string' ? { mimeType: 'application/vnd.google-apps.document', text: docs[id] } : docs[id];
+          if (url.indexOf('fields=mimeType') >= 0) return response(200, { mimeType: doc.mimeType });
+          if (url.indexOf('/export') >= 0 && doc.mimeType !== 'application/vnd.google-apps.document') return response(403, 'fileNotExportable');
+          return response(200, doc.text);
         }
         if (url.indexOf('chat.googleapis.com') >= 0) {
           const call = { url, method: opts.method, body: opts.payload ? JSON.parse(opts.payload) : null };

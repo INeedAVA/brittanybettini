@@ -58,6 +58,10 @@ function setupEnv() {
   env.docs['doc3xxxxxxxxxxxxxxxxxxxxxx'] = 'CONFIDENTIAL management escalation matrix.';
   env.docs['doc4xxxxxxxxxxxxxxxxxxxxxx'] = 'Acme gets 40 hours per week.';
   env.docs['doc5xxxxxxxxxxxxxxxxxxxxxx'] = 'Retired policy text.';
+  kb.push(['Text Handbook', 'https://drive.google.com/file/d/doc6xxxxxxxxxxxxxxxxxxxxxx/view', 'VA', '', 'Approved', '', '']);
+  env.docs['doc6xxxxxxxxxxxxxxxxxxxxxx'] = { mimeType: 'text/plain', text: 'Plain text handbook.' };
+  kb.push(['Scanned PDF', 'https://drive.google.com/file/d/doc7xxxxxxxxxxxxxxxxxxxxxx/view', 'VA', '', 'Approved', '', '']);
+  env.docs['doc7xxxxxxxxxxxxxxxxxxxxxx'] = { mimeType: 'application/pdf', text: '%PDF' };
 
   const spaces = env.sheet('Spaces');
   spaces.push(['spaces/acme', 'Acme VA Team', 'YES', 'VA', 'Acme', toSerial(new Date()), '']);
@@ -169,7 +173,7 @@ test('VA in a DM gets VA + general docs only, and only real sources are cited', 
   const env = setupEnv();
   claudeReturns(env, answer({ reply: 'Request leave 2 weeks ahead.', sources: ['VA Handbook', 'Made Up Policy'] }));
   const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How do I request leave?'));
-  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ', 'VA Handbook']);
+  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ', 'Text Handbook', 'VA Handbook']);
   assert.strictEqual(r.text, 'Request leave 2 weeks ahead.', 'no source line or AI label by default');
   const log = env.sheet('Audit Log').slice(-1)[0].join(' ');
   assert.match(log, /sources: VA Handbook/);
@@ -210,9 +214,9 @@ test('a VA never gets documents for a client account they do not work on', () =>
   const env = setupEnv();
   claudeReturns(env, answer({}));
   env.ctx.onMessage(dmEvent('va3@inava.test', 'users/8', 'What hours does my client get?'));
-  assert.deepStrictEqual(kbSent(env).sort(), ['Client FAQ', 'VA Handbook']);
+  assert.deepStrictEqual(kbSent(env).sort(), ['Client FAQ', 'Text Handbook', 'VA Handbook']);
   env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'What hours does my client get?'));
-  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ', 'VA Handbook']);
+  assert.deepStrictEqual(kbSent(env).sort(), ['Acme Service Agreement', 'Client FAQ', 'Text Handbook', 'VA Handbook']);
 });
 
 test('management in an internal space sees the management playbook', () => {
