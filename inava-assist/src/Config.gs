@@ -31,6 +31,9 @@ const DEFAULTS = {
   SHOW_SOURCES: 'off',
   // Show "Ask INAVA · AI assistant" under every reply ('on' / 'off').
   SHOW_AI_LABEL: 'off',
+  // Ask INAVA greets someone ("Hi Vicky!") only when they haven't messaged it for this many
+  // days. In an ongoing conversation it just answers.
+  GREETING_GAP_DAYS: '3',
 };
 
 // Notes about known gaps or conflicts in the approved documents, sent with them to the AI.

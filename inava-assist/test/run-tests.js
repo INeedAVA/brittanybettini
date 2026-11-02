@@ -1477,6 +1477,33 @@ test('evaluator: whitespace-only changes are not findings, and each code change 
   assert.deepStrictEqual(p2, ['AI reply claimed a handoff or action (removed by the safety filter)']);
 });
 
+test('greetings: only at the start of a conversation, not on every reply', () => {
+  const env = setupEnv();
+  const lastRequest = () => env.sent.claude.slice(-1)[0].body.messages.slice(-1)[0].content;
+  claudeReturns(env, answer({ reply: 'Hi Vicky! Leave must be filed 2 weeks ahead.' }));
+  // First message ever: a greeting is fine and kept.
+  let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How early do I file leave?'));
+  assert.match(lastRequest(), /Conversation: new/);
+  assert.strictEqual(r.text, 'Hi Vicky! Leave must be filed 2 weeks ahead.');
+  // Next message: ongoing, so the AI is told not to greet, and a greeting it adds anyway is removed.
+  r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'And for PTO?'));
+  assert.match(lastRequest(), /Conversation: ongoing/);
+  assert.strictEqual(r.text, 'Leave must be filed 2 weeks ahead.');
+  // Days later (conversation memory gone): ongoing while within GREETING_GAP_DAYS, new after it.
+  Object.keys(env.cache).filter((k) => k.indexOf('hist:') === 0).forEach((k) => delete env.cache[k]);
+  env.props['seen:va@inava.test'] = String(Date.now() - 2 * 86400000);
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Hello again'));
+  assert.match(lastRequest(), /Conversation: ongoing/);
+  Object.keys(env.cache).filter((k) => k.indexOf('hist:') === 0).forEach((k) => delete env.cache[k]);
+  env.props['seen:va@inava.test'] = String(Date.now() - 4 * 86400000);
+  r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Hello again'));
+  assert.match(lastRequest(), /Conversation: new/);
+  assert.match(r.text, /^Hi Vicky!/);
+  // Ordinary first words are never mistaken for a greeting.
+  assert.strictEqual(env.ctx.stripOpeningGreeting_('Hindi pa po, pero puwede kang mag-file.', 'Vicky'), 'Hindi pa po, pero puwede kang mag-file.');
+  assert.strictEqual(env.ctx.stripOpeningGreeting_('Hi Vicky!', 'Vicky'), 'Hi Vicky!');
+});
+
 let failed = 0;
 tests.forEach((t) => {
   try {

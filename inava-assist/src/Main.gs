@@ -152,11 +152,12 @@ function handleMessage_(ev, messageKey) {
     return { id: t.id, category: t.category, open: t.status !== 'Resolved', raised: shortDate_(t.created), summary: t.summary };
   });
   const history = loadHistory_(user.email, ev.space.name);
+  const ongoing = isOngoingConversation_(user.email, history);
 
   // Passwords, codes and card or account numbers never go to the AI (it only needs to know one was shared).
   const safeText = redactCredentials_(text);
   const decision = askClaudeInLanguage_({
-    text: safeText, user: user, ctx: ctx, knowledge: knowledge, tickets: tickets, history: history,
+    text: safeText, user: user, ctx: ctx, knowledge: knowledge, tickets: tickets, history: history, ongoing: ongoing,
     team: teamNames_(),
   });
   if (decision.refused) {
@@ -177,7 +178,7 @@ function handleMessage_(ev, messageKey) {
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
     ? statusReply_(user, which || 'NONE', !ev.isDm, null, safeText) : '';
-  let reply = composeReply_(decision, status, results, { inDm: ev.isDm });
+  let reply = composeReply_(decision, status, results, { inDm: ev.isDm, ongoing: ongoing, firstName: firstName_(user.name) });
 
   // Only cite documents this person was actually given.
   const titles = knowledge.docs.map(function (d) { return d.title; });
@@ -189,6 +190,7 @@ function handleMessage_(ev, messageKey) {
 
   // Passwords and codes are never kept, even in the 6-hour conversation memory.
   saveHistory_(user.email, ev.space.name, history, redactCredentials_(text), reply);
+  markSeen_(user.email);
   audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED',
     ticketId: results.map(function (r) { return r.ticketId; }).filter(String).join(' '),
     detail: decision.intent + (results.length ? ' | ' + results.map(function (r) {
@@ -337,6 +339,43 @@ const EMERGENCY_TEXT = 'If you\'re in immediate danger, please contact your loca
 // In a direct message the VA is already talking privately; advice to "message me privately" is removed.
 const MOVE_TO_PRIVATE = /\b(?:message me (?:directly|privately)|send me a (?:direct|private) message|direct message|private (?:chat|message)|DM me|privately with me|move (?:this|it) to (?:a )?private|i-?message mo (?:ako|ito sa akin) (?:nang )?(?:direkta|pribado)|sa private chat|private nga chat|pribado)\b/i;
 
+/**
+ * True when the person talked to Ask INAVA recently: this conversation's memory still has
+ * turns (6 hours), or their last message was less than GREETING_GAP_DAYS ago.
+ */
+function isOngoingConversation_(email, history) {
+  if (history && history.length) return true;
+  const last = Number(PropertiesService.getScriptProperties().getProperty(seenKey_(email)) || 0);
+  const gapDays = Number(getProp_('GREETING_GAP_DAYS')) || 3;
+  return last > 0 && Date.now() - last < gapDays * 86400000;
+}
+
+function seenKey_(email) {
+  return 'seen:' + lower_(email);
+}
+
+function markSeen_(email) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(seenKey_(email), String(Date.now()));
+  } catch (e) {
+    console.warn('Could not record last message time: ' + e);
+  }
+}
+
+/**
+ * Removes an opening greeting in an ongoing conversation ("Hi Vicky! ", "Hello po, ", "Hi! ",
+ * "Vicky, "), keeping the rest of the first sentence. A greeting that is the whole reply stays.
+ */
+function stripOpeningGreeting_(text, firstName) {
+  const name = firstName ? '(?:\\s+' + firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')?' : '';
+  const greet = new RegExp('^\\s*(?:hi|hello|hey|hiya|good\\s+(?:morning|afternoon|evening|day)|kumusta|kamusta|maayong\\s+\\w+)' +
+    '(?:\\s+(?:po|there|again))?' + name + '(?:\\s+po)?\\s*[!,.:]+\\s*', 'i');
+  let out = String(text || '').replace(greet, '');
+  if (firstName) out = out.replace(new RegExp('^\\s*' + firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[,!]\\s*', 'i'), '');
+  if (!out.trim()) return String(text || '');
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+
 function composeReply_(decision, status, results, options) {
   const inDm = !!(options && options.inDm);
   const team = teamNames_();
@@ -366,6 +405,7 @@ function composeReply_(decision, status, results, options) {
   const statusOnly = decision.intent === 'STATUS_REQUEST' && status && !results.length;
   let own = statusOnly ? '' : cleanReply_(decision.reply);
   if (inDm) own = removeSentences_(own, function (x) { return MOVE_TO_PRIVATE.test(x); });
+  if (options && options.ongoing) own = stripOpeningGreeting_(own, options.firstName);
   let placed = false;
   if (own.search(HANDOFF_MARKER) >= 0) {
     let first = true;
