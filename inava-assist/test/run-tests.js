@@ -1168,7 +1168,7 @@ test('policy grounding: the leave notice conflict is sent with the documents, an
   claudeReturns(env, answer({}));
   env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How early do I file leave?'));
   const kb = env.sent.claude[0].body.system[1].text;
-  assert.match(kb, /<policy_notes>[^]*two \(2\) weeks[^]*ten \(10\) business days[^]*HR has not yet confirmed/);
+  assert.match(kb, /<policy_notes>[^]*two \(2\) weeks[^]*ten \(10\) business days[^]*are the same rule[^]*file by Monday, Oct 5/);
   assert.match(env.sent.claude[0].body.system[0].text, /Never say or imply that a request is approved/);
   assert.match(env.sent.claude[0].body.system[0].text, /give both as written and say HR confirms which applies/);
   env.props.POLICY_NOTES = 'none';

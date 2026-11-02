@@ -40,7 +40,7 @@ const DEFAULTS = {
 // Notes about known gaps or conflicts in the approved documents, sent with them to the AI.
 // Override with Script Property POLICY_NOTES (set it to "none" once HR has fixed the documents).
 const DEFAULT_POLICY_NOTES = [
-  '- Leave notice: the handbook gives two different notice periods. The Leave Process section says "file two (2) weeks before the leave date" (filing late: not permitted to take the leave, and not eligible for the perfect attendance bonus). Another section says to notify Workforce and HR "at least ten (10) business days in advance". HR has not yet confirmed which applies. When asked about leave notice, mention both as written, say HR confirms which applies, and suggest filing as early as possible. For a request that is already late or close to the date, do not say it will be refused or allowed: say HR decides and offer to pass it to HR.',
+  '- Leave notice (confirmed by INAVA, Nov 2026): the handbook\'s "two (2) weeks before the leave date" and "at least ten (10) business days in advance" are the same rule, not two different ones. File leave at least 2 weeks (10 business days) before the first day of leave, counting weekends in the 2 weeks. Example: for leave starting Monday, Oct 19, 2026, file by Monday, Oct 5. Filing late: the handbook says the VA is not permitted to take the leave and is not eligible for the perfect attendance bonus. Give this as the rule. For a request that is already late or close to the date, do not say it will be refused or allowed: say HR decides and offer to pass it to HR.',
 ].join('\n');
 
 function policyNotes_() {
