@@ -90,7 +90,7 @@ function setup() {
 
   console.log('Setup complete. Control sheet: https://docs.google.com/spreadsheets/d/' + controlSheetId_());
   console.log('Share each knowledge document (or their folder) with ' + saEmail + ' as Viewer.');
-  console.log('Next: fill in the Routing, Users and Knowledge tabs, add a daily (weekday morning) trigger for dailyMorning, then run checkSetup().');
+  console.log('Next: fill in the Routing, Users and Knowledge tabs, add a daily (weekday morning) trigger for dailyMorning and a 5-minute trigger for checkWaitingConcerns, then run checkSetup().');
 }
 
 /** Logs a checklist of what is working and what still needs doing. */

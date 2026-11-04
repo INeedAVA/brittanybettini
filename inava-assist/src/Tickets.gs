@@ -1071,7 +1071,9 @@ function touchWaiting_(tickets) {
 }
 
 /**
- * Runs every 5 minutes (installCheckInTrigger). For each concern waiting on a VA:
+ * Runs every 5 minutes. Add the trigger by hand (Triggers, clock icon > Add Trigger: checkWaitingConcerns,
+ * Head, Time-driven, Minutes timer, Every 5 minutes); creating it from code would need an extra
+ * permission for every user. For each concern waiting on a VA:
  * - quiet for CHECK_IN_MINUTES: asks them once whether it is sorted (in their DM or thread);
  * - quiet for CHECK_IN_CLOSE_HOURS after that: closes it quietly (it never reached the team).
  * If the check-in cannot be sent, the concern goes to the team instead, so nothing is lost.
@@ -1129,11 +1131,4 @@ function sendCheckIn_(t) {
     console.error('Check-in for ' + t.id + ' could not be sent: ' + e);
     return false;
   }
-}
-
-/** Run once from the editor: checks waiting concerns every 5 minutes. Safe to run again. */
-function installCheckInTrigger() {
-  const exists = ScriptApp.getProjectTriggers().some(function (tr) { return tr.getHandlerFunction() === 'checkWaitingConcerns'; });
-  if (!exists) ScriptApp.newTrigger('checkWaitingConcerns').timeBased().everyMinutes(5).create();
-  console.log(exists ? 'The check-in trigger is already installed.' : 'Installed: checkWaitingConcerns runs every 5 minutes.');
 }
