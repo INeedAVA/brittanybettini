@@ -148,8 +148,10 @@ function handleMessage_(ev, messageKey) {
       detail: 'Some approved documents were left out of this answer. Shorten or split the knowledge base.' });
   }
   // Only the person's own concerns are ever looked up or shown to the AI.
-  const tickets = recentTicketsFor_(user.email).map(function (t) {
-    return { id: t.id, category: t.category, open: t.status !== 'Resolved', raised: shortDate_(t.created), summary: t.summary };
+  const ownTickets = recentTicketsFor_(user.email);
+  const tickets = ownTickets.map(function (t) {
+    return { id: t.id, category: t.category, open: t.status !== 'Resolved', waiting: t.status === WAITING_STATUS,
+      raised: shortDate_(t.created), summary: t.summary };
   });
   const history = loadHistory_(user.email, ev.space.name);
   const ongoing = isOngoingConversation_(user.email, history);
@@ -172,9 +174,15 @@ function handleMessage_(ev, messageKey) {
     spaceName: ev.space.displayName,
     isDm: ev.isDm,
     link: ev.isDm ? '' : conversationLink_(ev),
+    thread: ev.message && ev.message.thread ? String(ev.message.thread.name || '') : '',
     message: safeText,
     messageKey: messageKey,
   });
+  // They said something is sorted: close it (or tell the team). Never one this message just passed on.
+  const sorted = resolveByRequester_(decision.resolved_tickets, user,
+    results.map(function (r) { return String(r.ticketId || '').toUpperCase(); }));
+  // A concern waiting on them waits 15 minutes from their latest message, not from the first one.
+  touchWaiting_(ownTickets.filter(function (t) { return sorted.indexOf(t.id) < 0; }));
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
     ? statusReply_(user, which || 'NONE', !ev.isDm, null, safeText) : '';
@@ -194,9 +202,10 @@ function handleMessage_(ev, messageKey) {
   audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED',
     ticketId: results.map(function (r) { return r.ticketId; }).filter(String).join(' '),
     detail: decision.intent + (results.length ? ' | ' + results.map(function (r) {
-      return r.category + (r.isNew ? ' new' : ' update') + (r.saved ? (r.delivered ? ' delivered' : ' NOT delivered') : ' NOT saved') +
+      return r.category + (r.isNew ? ' new' : ' update') + (r.saved ? (r.held ? ' waiting on VA' : r.delivered ? ' delivered' : ' NOT delivered') : ' NOT saved') +
         (r.urgent ? ' urgent-safety' : '');
     }).join(', ') : '') +
+      (sorted.length ? ' | sorted by VA: ' + sorted.join(' ') : '') +
       (cited.length ? ' | sources: ' + cited.join('; ') : '') +
       (decision.languageRetried ? ' | language retry' : '') +
       (decision.usage ? ' | ' + decision.usage : '') });
@@ -388,13 +397,18 @@ function composeReply_(decision, status, results, options) {
   const facts = [];
   const handoffs = [];
   results.forEach(function (r) {
+    // Waiting on the VA: instead of a handoff, ask whether the advice helped.
+    if (r.saved && r.held) {
+      if (r.offer && handoffs.indexOf(r.offer) < 0) handoffs.push(r.offer);
+      return;
+    }
     if (!r.saved || !r.delivered) return;
     // For a safety risk, a plain fact with no promise about who is available or when.
     const h = r.urgent ? 'I\'ve let ' + (team[r.category] || 'our team') + ' know about this right away.' : r.handoff;
     if (h && handoffs.indexOf(h) < 0) handoffs.push(h);
   });
   if (handoffs.length) facts.push(handoffs.join(' '));
-  if (results.some(function (r) { return r.saved && !r.delivered; })) {
+  if (results.some(function (r) { return r.saved && !r.delivered && !r.held; })) {
     facts.push('I\'ve noted this, but I couldn\'t reach the team just now. I\'ll keep trying and make sure it gets to them.' +
       (urgent ? ' Because this is urgent, please also contact ' + ops + ' directly.' : ''));
   }

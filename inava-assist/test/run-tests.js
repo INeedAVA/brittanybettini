@@ -890,7 +890,8 @@ test('new ticket columns are added to an existing sheet without touching its dat
   tickets.push(['INAVA-261001-001', 'Assigned', 'CLIENT_CARE', 'NORMAL']);
   Object.keys(env.cache).filter((k) => k.indexOf('cols_ok:') === 0).forEach((k) => delete env.cache[k]);
   env.ctx.ensureColumns_(env.get('SHEETS.TICKETS'));
-  assert.deepStrictEqual(tickets[0].slice(18), ['Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice']);
+  assert.deepStrictEqual(tickets[0].slice(18), ['Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice',
+    'Waiting Since', 'Check-in Sent', 'Check-in Message', 'Reply Thread']);
   assert.strictEqual(tickets[1][0], 'INAVA-261001-001');
   // Older tickets have no Delivery value and are never re-sent.
   env.sheet('Spaces').push(['spaces/inbox', 'Inbox', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '', 'YES']);
@@ -921,7 +922,7 @@ test('live language test: checks each case, writes results, never posts or creat
   assert.strictEqual(rows[0][0], 'Time');
   const total = rows[rows.length - 1];
   assert.strictEqual(total[1], 'TOTAL');
-  assert.match(total[11], /^\d+\/40 cases passed, estimated cost \$0\.0140/);
+  assert.match(total[11], /^\d+\/43 cases passed, estimated cost \$0\.0150/);
   assert.ok(rows.some((r) => r[10] === 'PASS') && rows.some((r) => r[10] === 'CHECK'));
   // A status case is answered by the real status code from the made-up record, not the AI's words.
   const statusRow = rows.find((r) => r[3] === 'Any update on my leave request?');
@@ -1514,6 +1515,219 @@ test('round 6: offers kept, sentences re-spaced, today\'s date sent for deadline
   assert.strictEqual(r.text, 'Walay sapayan! Sultihi lang ko. Naa ra ko diri. Visit va.portal.ineedava.com for details.');
   assert.match(env.sent.claude.slice(-1)[0].body.messages.slice(-1)[0].content, /\nToday: .+ \(US Eastern time, which INAVA uses for deadlines\)\n/);
   assert.match(env.sent.claude.slice(-1)[0].body.system[0].text, /never "before <date>"[^]*already late/);
+});
+
+// ---- Help first, then check (Waiting on VA) ----
+function setCell(env, id, col, value) {
+  const data = env.sheet('Tickets');
+  const c = data[0].indexOf(col);
+  data.find((r) => r[0] === id)[c] = value;
+}
+const minutesAgo = (m) => toSerial(new Date(Date.now() - m * 60000));
+const toolConcern = (o) => concern(Object.assign({ category: 'OPERATIONS', priority: 'NORMAL', concern_text: 'My Hubstaff timer will not start.',
+  can_resolve_here: true, offer: 'Did that help? If not, I can pass it to Mabelle from our Operations team.',
+  check_in: 'Just checking in: is your Hubstaff tracking again? If not, I can pass it to Mabelle from our Operations team.',
+  handoff: 'I\'ve passed this to Mabelle from our Operations team.' }, o || {}));
+
+test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try logging out of Hubstaff and back in.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start')));
+  const row = ticketRows(env)[0];
+  assert.strictEqual(row.Status, 'Waiting on VA');
+  assert.strictEqual(row.Delivery, 'Held');
+  assert.match(row['Check-in Message'], /Just checking in/);
+  assert.strictEqual(inboxPosts(env).length, 0, 'nothing posted to the team chat');
+  assert.match(r, /logging out[\s\S]*Did that help\? If not, I can pass it to Mabelle/);
+  assert.doesNotMatch(r, /passed this|couldn't reach/);
+  // The team's daily check-in does not list it (the team never had it).
+  env.sent.chat.length = 0;
+  env.ctx.checkOverdueTickets();
+  assert.strictEqual(inboxPosts(env).length, 0);
+  // Without an offer from the AI, a safe default question is used.
+  const env2 = withInbox(setupEnv());
+  claudeReturns(env2, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern({ offer: 'I\'ve passed this on.' })] }));
+  const r2 = replyOf(env2.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start')));
+  assert.match(r2, /Did that help\? If not, just tell me and I can pass it to /);
+  assert.doesNotMatch(r2, /passed this on/);
+});
+
+test('help first: pay, HR, HIGH, urgent and sensitive concerns always go to the team at once', () => {
+  [{ category: 'PAYROLL' }, { category: 'RECRUITMENT_HR' }, { priority: 'HIGH' }, { urgent_safety: true },
+    { sensitive_personal: true }, { can_resolve_here: false }].forEach((o) => {
+    const env = withInbox(setupEnv());
+    claudeReturns(env, answer({ intent: 'CONCERN', reply: 'x [HANDOFF]', concerns: [toolConcern(o)] }));
+    env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My timer is broken'));
+    assert.notStrictEqual(ticketRows(env)[0].Status, 'Waiting on VA', JSON.stringify(o));
+    assert.ok(inboxPosts(env).length >= 1, JSON.stringify(o));
+  });
+  // Switched off: every concern goes on at once.
+  const env = withInbox(setupEnv());
+  env.props.CHECK_IN_MINUTES = 'off';
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'x [HANDOFF]', concerns: [toolConcern()] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My timer is broken'));
+  assert.strictEqual(ticketRows(env)[0].Status, 'Assigned');
+});
+
+test('help first: check-in after 15 quiet minutes (once), quiet close 2 hours later', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  env.sent.chat.length = 0;
+  env.ctx.checkWaitingConcerns();
+  assert.strictEqual(env.sent.chat.length, 0, 'not before 15 minutes');
+  setCell(env, id, 'Waiting Since', minutesAgo(16));
+  env.ctx.checkWaitingConcerns();
+  const dms = env.sent.chat.filter((c) => c.url.indexOf('spaces/dm-u6/messages') >= 0);
+  assert.strictEqual(dms.length, 1);
+  assert.match(dms[0].body.text, /Just checking in: is your Hubstaff tracking again/);
+  assert.ok(ticketRows(env)[0]['Check-in Sent']);
+  env.ctx.checkWaitingConcerns();
+  assert.strictEqual(env.sent.chat.length, 1, 'checked in only once');
+  setCell(env, id, 'Check-in Sent', minutesAgo(121));
+  env.ctx.checkWaitingConcerns();
+  const row = ticketRows(env)[0];
+  assert.strictEqual(row.Status, 'Resolved');
+  assert.strictEqual(row.Delivery, 'Not needed');
+  assert.match(row.History, /Closed automatically: no reply 2 hours after the check-in/);
+  assert.strictEqual(inboxPosts(env).length, 0, 'the team is never bothered');
+});
+
+test('help first: a new message from the VA restarts the 15 minutes', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  setCell(env, id, 'Waiting Since', minutesAgo(14));
+  claudeReturns(env, answer({ intent: 'QUESTION', reply: 'Sure, here is how.' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Also, how do I add a task?'));
+  setCell(env, id, 'Waiting Since', ticketRows(env)[0]['Waiting Since']);
+  env.sent.chat.length = 0;
+  env.ctx.checkWaitingConcerns();
+  assert.strictEqual(env.sent.chat.length, 0, 'the clock restarted with the new message');
+});
+
+test('help first: "still not working" passes the waiting concern to the team as a new concern', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  claudeReturns(env, answer({ intent: 'FOLLOW_UP', reply: 'Sorry it\'s still not working.\n\n[HANDOFF]',
+    concerns: [toolConcern({ related_ticket: id, can_resolve_here: false, concern_text: 'Still not working, I restarted twice.' })] }));
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Still not working, I restarted twice.')));
+  assert.strictEqual(ticketRows(env).length, 1, 'no second ticket');
+  const row = ticketRows(env)[0];
+  assert.strictEqual(row.Status, 'Assigned');
+  assert.strictEqual(row.Delivery, 'Delivered');
+  const cards = inboxPosts(env).map(cardText);
+  assert.strictEqual(cards.length, 1);
+  assert.match(cards[0], /NEW CONCERN[\s\S]*My Hubstaff timer will not start[\s\S]*They added later: Still not working/);
+  assert.match(r, /I've passed this to Mabelle from our Operations team/);
+  // Once with the team, the check-in job leaves it alone.
+  setCell(env, id, 'Waiting Since', minutesAgo(30));
+  env.sent.chat.length = 0;
+  env.ctx.checkWaitingConcerns();
+  assert.strictEqual(env.sent.chat.length, 0);
+});
+
+test('help first: "it works now" closes a waiting concern without telling the team', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  const out = answer({ intent: 'CASUAL', reply: 'Glad it\'s working now!' });
+  out.resolved_tickets = [id];
+  claudeReturns(env, out);
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'okay na, nigana na. salamat!')));
+  const row = ticketRows(env)[0];
+  assert.strictEqual(row.Status, 'Resolved');
+  assert.strictEqual(row.Delivery, 'Not needed');
+  assert.match(row.History, /Resolved by VA: Vicky VA said it was sorted, so it was not passed to the team/);
+  assert.strictEqual(inboxPosts(env).length, 0);
+  assert.match(r, /Glad it's working now!/);
+  assert.match(env.sheet('Audit Log').slice(-1)[0].join(' '), /sorted by VA: /);
+});
+
+test('help first: a VA saying a passed-on concern is sorted closes it and tells the team; pay and safety stay open', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client is unhappy with my report'));
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'x [HANDOFF]', concerns: [concern({ category: 'PAYROLL', concern_text: 'No pay yet' })] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'No pay yet'));
+  const [cc, pay] = ticketRows(env).map((t) => t['Ticket ID']);
+  env.sent.chat.length = 0;
+  const out = answer({ intent: 'CASUAL', reply: 'Great news!' });
+  out.resolved_tickets = [cc, pay, 'INAVA-999999-999'];
+  claudeReturns(env, out);
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client is happy now and I got paid!'));
+  const rows = ticketRows(env);
+  assert.strictEqual(rows[0].Status, 'Resolved');
+  assert.match(rows[0].History, /Resolved by VA: Vicky VA said it was sorted/);
+  assert.strictEqual(rows[1].Status, 'Assigned', 'payroll stays open for the Payroll Team to confirm');
+  const cards = inboxPosts(env).map(cardText);
+  assert.strictEqual(cards.length, 2);
+  assert.match(cards[0], /UPDATE ON A CONCERN[\s\S]*Vicky says this is sorted now, so Ask INAVA has closed it/);
+  assert.doesNotMatch(cards[0], /done INAVA/);
+  assert.match(cards[1], /Vicky says this is sorted now\. Please confirm with them before marking it as done/);
+  assert.match(cards[1], /done INAVA/);
+  // Someone else's ticket can never be closed this way.
+  const out2 = answer({ intent: 'CASUAL', reply: 'ok' });
+  out2.resolved_tickets = [pay];
+  claudeReturns(env, out2);
+  env.ctx.onMessage(dmEvent('va2@inava.test', 'users/7', 'sorted'));
+  assert.strictEqual(ticketRows(env)[1].Status, 'Assigned');
+});
+
+test('help first: "sorted" on a concern that never reached the team chat closes it without an update', () => {
+  const env = withInbox(setupEnv());
+  env.setChatFail(() => 503);
+  claudeReturns(env, answer({ escalate: true, category: 'CLIENT_CARE' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client is unhappy with my report'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  assert.strictEqual(ticketRows(env)[0].Delivery, 'Pending');
+  env.setChatFail(null);
+  env.sent.chat.length = 0;
+  const out = answer({ intent: 'CASUAL', reply: 'Glad to hear it!' });
+  out.resolved_tickets = [id];
+  claudeReturns(env, out);
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'never mind, my client is happy now'));
+  assert.strictEqual(ticketRows(env)[0].Status, 'Resolved');
+  assert.strictEqual(ticketRows(env)[0].Delivery, 'Not needed');
+  env.ctx.retryUndeliveredConcerns();
+  assert.strictEqual(inboxPosts(env).length, 0, 'never posted');
+});
+
+test('help first: in a group chat the check-in goes to the same thread; status and my tickets say it is not passed on', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  env.ctx.onMessage(spaceEvent('va@inava.test', 'users/6', 'spaces/acme', 'My Hubstaff timer will not start'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  assert.strictEqual(ticketRows(env)[0]['Reply Thread'], 'spaces/acme/threads/abc');
+  setCell(env, id, 'Waiting Since', minutesAgo(20));
+  env.sent.chat.length = 0;
+  env.ctx.checkWaitingConcerns();
+  assert.strictEqual(env.sent.chat.length, 1);
+  assert.match(env.sent.chat[0].url, /spaces\/acme\/messages/);
+  assert.deepStrictEqual(env.sent.chat[0].body.thread, { name: 'spaces/acme/threads/abc' });
+  const mine = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'my tickets')));
+  assert.match(mine, /not passed on yet/);
+  const status = env.ctx.statusReply_({ email: 'va@inava.test' }, id, false, null, '');
+  assert.match(status, /haven't passed that one on yet/);
+});
+
+test('help first: if the check-in cannot be sent, the concern goes to the team instead', () => {
+  const env = withInbox(setupEnv());
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  const id = ticketRows(env)[0]['Ticket ID'];
+  // The VA's DM space is unknown, so a private check-in is impossible.
+  env.sheet('Users').find((r) => r[0] === 'va@inava.test')[6] = '';
+  env.sheet('Users').find((r) => r[0] === 'va@inava.test')[5] = '';
+  setCell(env, id, 'Waiting Since', minutesAgo(20));
+  env.ctx.checkWaitingConcerns();
+  assert.strictEqual(ticketRows(env)[0].Status, 'Assigned');
+  assert.match(cardText(inboxPosts(env)[0]), /NEW CONCERN/);
 });
 
 let failed = 0;

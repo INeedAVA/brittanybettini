@@ -38,6 +38,12 @@ const DEFAULTS = {
   // Ask INAVA greets someone ("Hi Vicky!") only when they haven't messaged it for this many
   // days. In an ongoing conversation it just answers.
   GREETING_GAP_DAYS: '3',
+  // "Help first, then check": a concern that Ask INAVA's own advice may sort out waits (Status
+  // "Waiting on VA") instead of going to the team chat. If the VA hasn't replied after this many
+  // minutes, Ask INAVA asks whether it is sorted. Set to 'off' to pass every concern on at once.
+  CHECK_IN_MINUTES: '15',
+  // Hours after that check-in with no reply before the waiting concern is closed quietly.
+  CHECK_IN_CLOSE_HOURS: '2',
 };
 
 // Notes about known gaps or conflicts in the approved documents, sent with them to the AI.
@@ -88,6 +94,10 @@ const PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 
 const STATUSES = ['New', 'Assigned', 'In Progress', 'Awaiting Response', 'Resolved'];
 
+// A concern that has not been passed on yet: Ask INAVA gave advice and is waiting to hear from
+// the VA whether it helped (set and cleared only by Ask INAVA, never by a status command).
+const WAITING_STATUS = 'Waiting on VA';
+
 // Control spreadsheet tab names and column headers. setup() creates these.
 const SHEETS = {
   USERS: {
@@ -116,7 +126,10 @@ const SHEETS = {
       // ticket came from (so a retried event never makes a second ticket), and whether the
       // team chat has really received it (Pending tickets are re-sent safely).
       // Urgent Notice: the extra URGENT: SAFETY CONCERN card (Pending / Posted / Failed), retried like Delivery.
-      'Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice'],
+      'Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice',
+      // "Help first, then check" (Waiting on VA): when the VA last wrote, when Ask INAVA checked in,
+      // the check-in text (in the VA's language), and the thread to post it in (blank for a DM).
+      'Waiting Since', 'Check-in Sent', 'Check-in Message', 'Reply Thread'],
   },
   AUDIT: {
     name: 'Audit Log',
@@ -152,7 +165,8 @@ function setProp_(key, value) {
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets/';
 const DATA_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly';
-const DATE_COLUMNS = ['Created', 'Updated', 'Due By', 'Last Reminder', 'Time', 'Added On', 'Last Reviewed'];
+const DATE_COLUMNS = ['Created', 'Updated', 'Due By', 'Last Reminder', 'Time', 'Added On', 'Last Reviewed',
+  'Waiting Since', 'Check-in Sent'];
 
 // Rows read during this run, so one message doesn't re-read the same tab many times.
 var tableMemo_ = {};
@@ -708,6 +722,13 @@ const SYSTEM_PROMPT = [
   '- Your "reply" is the caring, helpful part only: acknowledge how they feel, give useful advice or the policy, and ask for any missing detail that would help. Offering, as a question, to pass something on is fine.',
   '- status_ticket: for a status question, the ID of the one concern they mean (open or recently resolved, from the list); "AMBIGUOUS" if more than one could match; "NONE" if none matches. Empty when they are not asking about status.',
   '',
+  'Help first, then check',
+  '- can_resolve_here: true only when your reply gives practical steps that may fully sort the problem out without anyone on the team (for example a tool, login or tracker problem with steps to try), they have not asked for a person, and it needs no decision, approval, payment, protection or record. False for pay, leave, schedules, contracts, mistreatment, harassment, conduct, safety, anything HIGH or URGENT, anything you could not answer, and whenever they asked for someone to step in. When true, the concern is not passed on yet: the system asks them later whether it is sorted, and passes it on only if they still need help.',
+  '- offer: when can_resolve_here is true, one short question in their language asking whether that helped and offering to pass it to the team member for its category, using the name in Team members (for example "Did that help? If not, just tell me and I can pass it to Ms. Mabelle from our Operations team."). Put the [HANDOFF] marker in "reply" where it goes, and do not write a similar offer in "reply" yourself. Otherwise empty.',
+  '- check_in: when can_resolve_here is true, a short, friendly message in their language that the system sends if they go quiet, asking whether it is sorted now and offering to pass it on (for example "Just checking in: is your Hubstaff tracking again? If not, I can pass it to Ms. Mabelle from our Operations team."). No greeting. Otherwise empty.',
+  '- Concerns marked "waiting for their answer" in the request have not been passed on yet. If they say it is still not working, it did not help, or they want it passed on, that is FOLLOW_UP with related_ticket = that ID and can_resolve_here false.',
+  '- resolved_tickets: the IDs of their own open concerns (from the list) that they clearly say are now sorted, fixed, or no longer needed ("okay na, gumana na", "never mind, it\'s fixed", "ok na siya, salamat"). A plain "thanks" or "okay" does not count unless it clearly says the problem is fixed. If unsure, leave it empty. When they say it is sorted, reply briefly and warmly ("Glad it\'s working now!"); never say that you closed, removed or updated anything.',
+  '',
   'Examples (English, Tagalog, Bisaya and mixed messages are all normal)',
   '- "hi! salamat sa tabang ganina" -> CASUAL.',
   '- "Pwede ba mag-leave sa Dec 24? Paano mag-file?" -> QUESTION (answer from the documents).',
@@ -764,17 +785,22 @@ function responseSchema_() {
             sensitive_personal: { type: 'boolean', description: 'Self-harm, sexual assault, or a serious medical or mental-health crisis.' },
             recommended_action: str,
             handoff: { type: 'string', description: 'One sentence: who this was passed to. Shown only after delivery.' },
+            can_resolve_here: { type: 'boolean', description: 'True only when your advice may fully sort this out without the team (see "Help first, then check").' },
+            offer: { type: 'string', description: 'When can_resolve_here: one question asking if that helped, offering to pass it on. Otherwise empty.' },
+            check_in: { type: 'string', description: 'When can_resolve_here: a short message to send if they go quiet. Otherwise empty.' },
           },
-          required: ['category', 'priority', 'concern_text', 'related_ticket', 'urgent_safety', 'sensitive_personal', 'recommended_action', 'handoff'],
+          required: ['category', 'priority', 'concern_text', 'related_ticket', 'urgent_safety', 'sensitive_personal', 'recommended_action', 'handoff',
+            'can_resolve_here', 'offer', 'check_in'],
           additionalProperties: false,
         },
       },
       status_ticket: { type: 'string', description: 'For a status question: a concern ID, "AMBIGUOUS" or "NONE". Otherwise empty.' },
+      resolved_tickets: { type: 'array', items: str, description: 'IDs of their own open concerns they clearly say are now sorted or no longer needed.' },
       sources: { type: 'array', items: str, description: 'Exact titles of the documents relied on.' },
       // Written last, after the handoff sentences, so the reply does not repeat them.
       reply: { type: 'string', description: 'The caring, helpful part only, with [HANDOFF] where the handoff goes. Never says or hints that anything was or will be passed on, added, noted or shared, and never states a status. Empty for a status question.' },
     },
-    required: ['intent', 'concerns', 'status_ticket', 'sources', 'reply'],
+    required: ['intent', 'concerns', 'status_ticket', 'resolved_tickets', 'sources', 'reply'],
     additionalProperties: false,
   };
 }
@@ -897,7 +923,8 @@ function formatRequest_(input) {
   // Only this person's own concerns, already redacted when stored.
   const tickets = (input.tickets || []).length
     ? input.tickets.map(function (t) {
-      return '- ' + t.id + ' (' + (t.open ? 'open' : 'resolved') + ', ' + t.category + ', raised ' + t.raised + '): ' +
+      return '- ' + t.id + ' (' + (t.waiting ? 'open, waiting for their answer: not passed on yet' : t.open ? 'open' : 'resolved') +
+        ', ' + t.category + ', raised ' + t.raised + '): ' +
         String(t.summary).slice(0, 400);
     }).join('\n')
     : '(none)';
@@ -1319,6 +1346,10 @@ function readTickets_() {
       delivery: String(r['Delivery'] || ''),
       deliveryAttempts: Number(r['Delivery Attempts'] || 0),
       urgentNotice: String(r['Urgent Notice'] || ''),
+      waitingSince: r['Waiting Since'] instanceof Date ? r['Waiting Since'] : (r['Waiting Since'] ? new Date(r['Waiting Since']) : null),
+      checkInSent: r['Check-in Sent'] instanceof Date ? r['Check-in Sent'] : (r['Check-in Sent'] ? new Date(r['Check-in Sent']) : null),
+      checkInMessage: String(r['Check-in Message'] || ''),
+      replyThread: String(r['Reply Thread'] || ''),
     };
   });
 }
@@ -1522,6 +1553,16 @@ function escalateConcerns_(concerns, user, source) {
         // A highly sensitive personal disclosure is never stored or shown in words: the team sees a
         // generic line and contacts the VA privately. An update on such a concern is treated the same.
         const sensitive = c.sensitive_personal === true || !!(related && related.summary === SENSITIVE_TEXT);
+        if (related && related.status === WAITING_STATUS) {
+          // They still need help with a concern that was waiting: now it goes to the team.
+          if (updated[related.id]) return;
+          updated[related.id] = true;
+          const added = redactConcern_(related.category, concernTextFor_(c, source.message, valid.length));
+          const ok = releaseHeld_(related, user, 'they still needed help', added, ref);
+          results.push({ ticketId: related.id, category: related.category, isNew: true, saved: true, delivered: ok,
+            handoff: safeHandoff_(related.category, c.handoff, false), urgent: false });
+          return;
+        }
         if (related) {
           const text = sensitive ? SENSITIVE_TEXT : redactConcern_(c.category === 'PAYROLL' ? 'PAYROLL' : related.category,
             concernTextFor_(c, source.message, valid.length));
@@ -1536,9 +1577,11 @@ function escalateConcerns_(concerns, user, source) {
             handoff: safeHandoff_(related.category, c.handoff, true), urgent: urgent });
         } else {
           const raw = sensitive ? SENSITIVE_TEXT : concernTextFor_(c, source.message, valid.length);
-          const t = createTicket_(c, raw, user, source, ref, earlier);
+          const hold = !sensitive && wouldHold_(c);
+          const t = createTicket_(c, raw, user, source, ref, earlier, hold);
           results.push({ ticketId: t.id, category: c.category, isNew: true, saved: true, delivered: t.delivered,
-            handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent });
+            handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent,
+            held: hold, offer: hold ? safeOffer_(c.category, c.offer) : '' });
         }
       } catch (e) {
         console.error('Could not record a concern: ' + e);
@@ -1553,7 +1596,7 @@ function escalateConcerns_(concerns, user, source) {
 }
 
 /** Saves a new ticket, then posts the NEW CONCERN card. Returns the ticket with .delivered. */
-function createTicket_(c, raw, user, source, ref, earlier) {
+function createTicket_(c, raw, user, source, ref, earlier, hold) {
   const category = c.category;
   const text = redactConcern_(category, raw);
   const urgent = c.urgent_safety === true;
@@ -1563,10 +1606,12 @@ function createTicket_(c, raw, user, source, ref, earlier) {
   const slaHours = routing ? routing.sla[priority] : DEFAULT_SLA_HOURS[priority];
   const created = historyLine_('Created from a message by ' + user.name +
     (earlier ? ' (follows up on ' + earlier.id + ', which was marked sorted)' : '') +
-    (urgent ? '. Marked as an urgent safety concern.' : ''));
+    (urgent ? '. Marked as an urgent safety concern.' : '') +
+    (hold ? '. Ask INAVA gave advice first and is waiting to hear from ' + firstName_(user.name) +
+      ' whether it helped (not passed to the team yet).' : ''));
   const ticket = {
     id: nextTicketId_(),
-    status: 'New',
+    status: hold ? WAITING_STATUS : 'New',
     category: category,
     priority: priority,
     assigneeName: routing ? routing.name : '',
@@ -1581,7 +1626,7 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     dueBy: new Date(now.getTime() + slaHours * 3600 * 1000),
     history: created,
     sourceRefs: ref ? [ref] : [],
-    delivery: 'Pending',
+    delivery: hold ? 'Held' : 'Pending',
     deliveryAttempts: 0,
     urgentNotice: urgent ? 'Pending' : '',
   };
@@ -1605,13 +1650,20 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     'Reminders Sent': 0,
     'History': ticket.history,
     'Source Message ID': ticket.sourceRefs.join(' '),
-    'Delivery': 'Pending',
+    'Delivery': ticket.delivery,
     'Delivery Attempts': 0,
     'Urgent Notice': ticket.urgentNotice,
+    'Waiting Since': hold ? now : '',
+    'Check-in Message': hold ? safeCheckIn_(category, c.check_in) : '',
+    'Reply Thread': hold && !source.isDm ? (source.thread || '') : '',
   });
   if (!ticket.row) throw new Error('The ticket row number was not returned by the Sheets API.');
   audit_({ email: user.email, role: user.role, space: source.spaceId, action: 'TICKET_CREATED', ticketId: ticket.id,
-    detail: category + ' / ' + priority + (urgent ? ' / urgent safety' : '') });
+    detail: category + ' / ' + priority + (urgent ? ' / urgent safety' : '') + (hold ? ' / waiting on VA' : '') });
+  if (hold) {
+    ticket.delivered = false;
+    return ticket;
+  }
 
   // A payroll contact cleared for details gets the figures privately (never in the team chat,
   // never stored); credentials are removed for everyone.
@@ -1816,19 +1868,21 @@ function firstName_(name) {
  * @param {boolean} isFollowUp true for a further message about an open concern
  * @param {string} postKey names the Chat message ("new", "u-1a2b3c4d") so a retry never posts twice
  */
-function notifyAssignee_(ticket, message, isFollowUp, postKey) {
+function notifyAssignee_(ticket, message, isFollowUp, postKey, options) {
+  options = options || {};
   const messageId = clientMessageId_(ticket.id + '-' + (postKey || (isFollowUp ? 'u-' + shortHash_(message) : 'new')));
   const routing = getRouting_(ticket.category);
   const cleared = ticket.category !== 'PAYROLL' || (routing && routing.payrollCleared &&
     (ticket.assigneeEmail === routing.email || ticket.assigneeEmail === routing.backupEmail));
-  const details = cleared ? message
+  // options.plain: text written by Ask INAVA itself (no figures), shown to everyone as it is.
+  const details = cleared || options.plain ? message
     : 'Payroll matter (details are private, please contact ' + firstName_(ticket.requesterName) + ' directly)';
 
   // Blank lines between lines: Google Chat may join single line breaks.
   const parts = [isFollowUp ? 'Update on a concern' : 'New concern'];
   parts.push(concernLines_(ticket, details));
   if (ticket.sourceLink) parts.push('Conversation: ' + ticket.sourceLink);
-  parts.push(DONE_LINE + ticket.id);
+  if (!options.closed) parts.push(DONE_LINE + ticket.id);
   const text = parts.join('\n\n');
 
   // Everything goes to the team chat when one is set up. Payroll figures and account
@@ -1955,7 +2009,7 @@ function matchStatus_(words) {
 /** "my tickets": open tickets assigned to this person (staff) or raised by them. */
 function describeMyTickets_(user) {
   const all = readTickets_().filter(function (t) { return t.status !== 'Resolved'; });
-  const assigned = all.filter(function (t) { return t.assigneeEmail === user.email; });
+  const assigned = all.filter(function (t) { return t.assigneeEmail === user.email && t.status !== WAITING_STATUS; });
   const raised = all.filter(function (t) { return t.requesterEmail === user.email; });
   const lines = [];
   if (assigned.length) {
@@ -1970,8 +2024,9 @@ function describeMyTickets_(user) {
     if (lines.length) lines.push('');
     lines.push('Things I\'ve passed on for you:');
     raised.forEach(function (t) {
-      lines.push('- ' + formatTime_(t.created) + ': with ' + (teamNames_()[t.category] || 'our team') +
-        ' (' + t.status.toLowerCase() + ')');
+      lines.push('- ' + formatTime_(t.created) + ': ' + (t.status === WAITING_STATUS
+        ? 'not passed on yet (tell me if you still need help and I\'ll pass it to ' + (teamNames_()[t.category] || 'our team') + ')'
+        : 'with ' + (teamNames_()[t.category] || 'our team') + ' (' + t.status.toLowerCase() + ')'));
     });
   }
   return lines.length ? lines.join('\n') : 'Nothing open right now.';
@@ -2020,6 +2075,8 @@ function statusLine_(t) {
       return Who + ' is working on it.';
     case 'Awaiting Response':
       return Who + ' is waiting for a reply from you on this one. Please check your messages and email.';
+    case WAITING_STATUS:
+      return 'I haven\'t passed that one on yet, because I wanted to check first whether my suggestions helped. If it\'s still not sorted, just tell me and I\'ll pass it to ' + who + '.';
     case 'Resolved':
       return Who + ' marked it as sorted on ' + shortDate_(t.updated || t.created) +
         '. If it\'s still not right, tell me what\'s happening and I\'ll pass it on again.';
@@ -2102,7 +2159,8 @@ function statusReply_(user, which, inSharedSpace, records, message) {
 function checkOverdueTickets() {
   resetMemo_();
   const now = Date.now();
-  const open = readTickets_().filter(function (t) { return t.status !== 'Resolved'; })
+  // Concerns still waiting on the VA have not been passed to the team, so they are not listed.
+  const open = readTickets_().filter(function (t) { return t.status !== 'Resolved' && t.status !== WAITING_STATUS; })
     .sort(function (a, b) { return a.created - b.created; });
   if (!open.length) return;
 
@@ -2127,6 +2185,192 @@ function checkOverdueTickets() {
   open.forEach(function (t) {
     updateObject_(SHEETS.TICKETS, t.row, { 'Reminders Sent': t.remindersSent + 1, 'Last Reminder': new Date() });
   });
+}
+
+// ---- Help first, then check (Waiting on VA) ----
+
+/**
+ * True when a NEW concern should wait for the VA instead of going to the team at once: the AI
+ * thinks its own advice may sort it out, and it is low-stakes. Pay, HR matters (leave, conduct,
+ * mistreatment), anything HIGH or URGENT, safety and sensitive matters always go straight away.
+ */
+function wouldHold_(c) {
+  if (String(getProp_('CHECK_IN_MINUTES')).trim().toLowerCase() === 'off') return false;
+  return c.can_resolve_here === true && c.urgent_safety !== true && c.sensitive_personal !== true &&
+    (c.category === 'CLIENT_CARE' || c.category === 'OPERATIONS') && (c.priority === 'LOW' || c.priority === 'NORMAL');
+}
+
+/** The "did that help?" question shown instead of the handoff, never claiming anything was passed on. */
+function safeOffer_(category, text) {
+  const own = cleanReply_(String(text || '').replace(HANDOFF_MARKER, '')).trim();
+  if (own && OFFER.test(own) || own && /\?\s*$/.test(own)) return own;
+  return 'Did that help? If not, just tell me and I can pass it to ' + (teamNames_()[category] || 'our team') + '.';
+}
+
+function safeCheckIn_(category, text) {
+  const own = cleanReply_(String(text || '').replace(HANDOFF_MARKER, '')).trim();
+  if (own) return own;
+  return 'Just checking in: is this sorted now? If not, just tell me and I can pass it to ' + (teamNames_()[category] || 'our team') + '.';
+}
+
+/**
+ * Sends a waiting concern to the team (it becomes a normal concern). Call inside the script lock.
+ * @param {string} why for the history ("they still needed help", "no check-in possible")
+ * @param {string} added what the VA added later (already redacted), or ''
+ * @return {boolean} delivered
+ */
+function releaseHeld_(ticket, user, why, added, ref) {
+  const routing = getRouting_(ticket.category) || getRouting_('OPERATIONS');
+  const slaHours = routing ? routing.sla[ticket.priority] : DEFAULT_SLA_HOURS[ticket.priority];
+  const fields = { 'Status': 'New', 'Delivery': 'Pending', 'Due By': new Date(Date.now() + (slaHours || 24) * 3600 * 1000) };
+  if (ref) fields['Source Message ID'] = ticket.sourceRefs.concat([ref]).join(' ');
+  updateObject_(SHEETS.TICKETS, ticket.row, fields);
+  ticket.status = 'New';
+  ticket.delivery = 'Pending';
+  appendHistory_(ticket, 'Passed to the team: ' + why + (added ? '. ' + firstName_(ticket.requesterName) + ' added: ' + added : ''));
+  audit_({ email: user ? user.email : ticket.requesterEmail, role: user ? user.role : '', action: 'TICKET_RELEASED', ticketId: ticket.id, detail: why });
+  const message = ticket.summary + (added && added !== ticket.summary ? '\n\nThey added later: ' + added : '');
+  const ok = deliverNewTicket_(ticket, ticket.deliveryAttempts + 1, message);
+  if (!ok) alertOperations_(ticket, { name: ticket.requesterName, email: ticket.requesterEmail });
+  return ok;
+}
+
+/**
+ * The VA says one or more of their own open concerns are sorted.
+ * - Waiting on VA: closed, nothing is posted (the team never had it).
+ * - Already with the team: closed, and the team gets a short update card.
+ * - Pay, urgent safety or sensitive matters: left open for the team to confirm; the team gets the update.
+ * @return {string[]} the IDs that were closed or reported
+ */
+function resolveByRequester_(ids, user, skip) {
+  const wanted = (ids || []).map(function (x) { return String(x || '').trim().toUpperCase(); })
+    .filter(function (x, i, arr) { return x && arr.indexOf(x) === i && (skip || []).indexOf(x) < 0; });
+  if (!wanted.length) return [];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  const done = [];
+  try {
+    resetMemo_();
+    readTickets_().filter(function (t) {
+      return t.requesterEmail === user.email && t.status !== 'Resolved' && wanted.indexOf(t.id.toUpperCase()) >= 0;
+    }).forEach(function (t) {
+      try {
+        const first = firstName_(user.name);
+        if (t.status === WAITING_STATUS) {
+          updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved', 'Delivery': 'Not needed' });
+          appendHistory_(t, 'Resolved by VA: ' + user.name + ' said it was sorted, so it was not passed to the team');
+          audit_({ email: user.email, role: user.role, action: 'TICKET_RESOLVED_BY_VA', ticketId: t.id, detail: 'waiting on VA, not passed on' });
+          done.push(t.id);
+          return;
+        }
+        const keepOpen = t.category === 'PAYROLL' || t.priority === 'URGENT' || !!t.urgentNotice || t.summary === SENSITIVE_TEXT;
+        // Saved but never reached the team chat (a delivery problem): close it without an update.
+        if (!keepOpen && /^(?:Pending|Failed)$/.test(t.delivery)) {
+          updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved', 'Delivery': 'Not needed' });
+          appendHistory_(t, 'Resolved by VA: ' + user.name + ' said it was sorted before it reached the team');
+          audit_({ email: user.email, role: user.role, action: 'TICKET_RESOLVED_BY_VA', ticketId: t.id, detail: 'closed before delivery' });
+          done.push(t.id);
+          return;
+        }
+        const note = keepOpen
+          ? first + ' says this is sorted now. Please confirm with them before marking it as done.'
+          : first + ' says this is sorted now, so Ask INAVA has closed it. Nothing more to do unless they raise it again.';
+        if (!keepOpen) updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved' });
+        appendHistory_(t, keepOpen ? 'VA said it was sorted; left open for the team to confirm'
+          : 'Resolved by VA: ' + user.name + ' said it was sorted');
+        const posted = notifyAssignee_(t, note, true, 'sorted-' + (t.history.match(/said it was sorted/g) || []).length,
+          { plain: true, closed: !keepOpen });
+        if (!posted) appendHistory_(t, 'Could not post the "sorted" update to the team');
+        audit_({ email: user.email, role: user.role, action: 'TICKET_RESOLVED_BY_VA', ticketId: t.id,
+          detail: (keepOpen ? 'left open for the team to confirm' : 'closed') + (posted ? ', team told' : ', team NOT told') });
+        done.push(t.id);
+      } catch (e) {
+        console.error('Could not mark ' + t.id + ' as sorted: ' + e);
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+  return done;
+}
+
+/** The VA wrote again before the check-in: their waiting concerns wait 15 minutes from now. */
+function touchWaiting_(tickets) {
+  (tickets || []).filter(function (t) { return t.status === WAITING_STATUS && !t.checkInSent; }).forEach(function (t) {
+    try {
+      updateObject_(SHEETS.TICKETS, t.row, { 'Waiting Since': new Date() });
+    } catch (e) {
+      console.warn('Could not update Waiting Since for ' + t.id + ': ' + e);
+    }
+  });
+}
+
+/**
+ * Runs every 5 minutes (installCheckInTrigger). For each concern waiting on a VA:
+ * - quiet for CHECK_IN_MINUTES: asks them once whether it is sorted (in their DM or thread);
+ * - quiet for CHECK_IN_CLOSE_HOURS after that: closes it quietly (it never reached the team).
+ * If the check-in cannot be sent, the concern goes to the team instead, so nothing is lost.
+ */
+function checkWaitingConcerns() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return;
+  try {
+    resetMemo_();
+    ensureColumns_(SHEETS.TICKETS);
+    const minutes = Number(getProp_('CHECK_IN_MINUTES')) || 15;
+    const closeHours = Number(getProp_('CHECK_IN_CLOSE_HOURS')) || 2;
+    const now = Date.now();
+    readTickets_().filter(function (t) { return t.status === WAITING_STATUS; }).forEach(function (t) {
+      try {
+        if (!t.checkInSent) {
+          const since = (t.waitingSince || t.created).getTime();
+          if (now - since < minutes * 60000) return;
+          if (sendCheckIn_(t)) {
+            updateObject_(SHEETS.TICKETS, t.row, { 'Check-in Sent': new Date() });
+            appendHistory_(t, 'Checked in with ' + firstName_(t.requesterName) + ' (no reply for ' + minutes + ' minutes)');
+            audit_({ email: t.requesterEmail, action: 'VA_CHECK_IN', ticketId: t.id });
+          } else {
+            releaseHeld_(t, null, 'Ask INAVA could not check in with the VA', '', '');
+          }
+          return;
+        }
+        if (now - t.checkInSent.getTime() >= closeHours * 3600000) {
+          updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved', 'Delivery': 'Not needed' });
+          appendHistory_(t, 'Closed automatically: no reply ' + closeHours + ' hours after the check-in (not passed to the team)');
+          audit_({ email: t.requesterEmail, action: 'TICKET_AUTO_CLOSED', ticketId: t.id, detail: 'no reply after the check-in' });
+        }
+      } catch (e) {
+        console.error('Check-in for ' + t.id + ' failed: ' + e);
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Posts the check-in where the conversation happened. A retry never posts twice. */
+function sendCheckIn_(t) {
+  const text = t.checkInMessage || safeCheckIn_(t.category, '');
+  const messageId = clientMessageId_(t.id + '-checkin');
+  try {
+    if (t.replyThread) {
+      postMessage_(t.replyThread.split('/threads/')[0], text, t.replyThread, messageId);
+      return true;
+    }
+    return sendPrivateMessage_(t.requesterEmail, text, messageId);
+  } catch (e) {
+    // Already posted (a retry after a lost response) counts as sent.
+    if (/\b409\b|ALREADY_EXISTS/i.test(String(e))) return true;
+    console.error('Check-in for ' + t.id + ' could not be sent: ' + e);
+    return false;
+  }
+}
+
+/** Run once from the editor: checks waiting concerns every 5 minutes. Safe to run again. */
+function installCheckInTrigger() {
+  const exists = ScriptApp.getProjectTriggers().some(function (tr) { return tr.getHandlerFunction() === 'checkWaitingConcerns'; });
+  if (!exists) ScriptApp.newTrigger('checkWaitingConcerns').timeBased().everyMinutes(5).create();
+  console.log(exists ? 'The check-in trigger is already installed.' : 'Installed: checkWaitingConcerns runs every 5 minutes.');
 }
 
 // ===== Briefing.gs =====
@@ -2435,8 +2679,10 @@ function handleMessage_(ev, messageKey) {
       detail: 'Some approved documents were left out of this answer. Shorten or split the knowledge base.' });
   }
   // Only the person's own concerns are ever looked up or shown to the AI.
-  const tickets = recentTicketsFor_(user.email).map(function (t) {
-    return { id: t.id, category: t.category, open: t.status !== 'Resolved', raised: shortDate_(t.created), summary: t.summary };
+  const ownTickets = recentTicketsFor_(user.email);
+  const tickets = ownTickets.map(function (t) {
+    return { id: t.id, category: t.category, open: t.status !== 'Resolved', waiting: t.status === WAITING_STATUS,
+      raised: shortDate_(t.created), summary: t.summary };
   });
   const history = loadHistory_(user.email, ev.space.name);
   const ongoing = isOngoingConversation_(user.email, history);
@@ -2459,9 +2705,15 @@ function handleMessage_(ev, messageKey) {
     spaceName: ev.space.displayName,
     isDm: ev.isDm,
     link: ev.isDm ? '' : conversationLink_(ev),
+    thread: ev.message && ev.message.thread ? String(ev.message.thread.name || '') : '',
     message: safeText,
     messageKey: messageKey,
   });
+  // They said something is sorted: close it (or tell the team). Never one this message just passed on.
+  const sorted = resolveByRequester_(decision.resolved_tickets, user,
+    results.map(function (r) { return String(r.ticketId || '').toUpperCase(); }));
+  // A concern waiting on them waits 15 minutes from their latest message, not from the first one.
+  touchWaiting_(ownTickets.filter(function (t) { return sorted.indexOf(t.id) < 0; }));
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
     ? statusReply_(user, which || 'NONE', !ev.isDm, null, safeText) : '';
@@ -2481,9 +2733,10 @@ function handleMessage_(ev, messageKey) {
   audit_({ email: user.email, role: user.role, space: ev.space.name, action: 'ANSWERED',
     ticketId: results.map(function (r) { return r.ticketId; }).filter(String).join(' '),
     detail: decision.intent + (results.length ? ' | ' + results.map(function (r) {
-      return r.category + (r.isNew ? ' new' : ' update') + (r.saved ? (r.delivered ? ' delivered' : ' NOT delivered') : ' NOT saved') +
+      return r.category + (r.isNew ? ' new' : ' update') + (r.saved ? (r.held ? ' waiting on VA' : r.delivered ? ' delivered' : ' NOT delivered') : ' NOT saved') +
         (r.urgent ? ' urgent-safety' : '');
     }).join(', ') : '') +
+      (sorted.length ? ' | sorted by VA: ' + sorted.join(' ') : '') +
       (cited.length ? ' | sources: ' + cited.join('; ') : '') +
       (decision.languageRetried ? ' | language retry' : '') +
       (decision.usage ? ' | ' + decision.usage : '') });
@@ -2675,13 +2928,18 @@ function composeReply_(decision, status, results, options) {
   const facts = [];
   const handoffs = [];
   results.forEach(function (r) {
+    // Waiting on the VA: instead of a handoff, ask whether the advice helped.
+    if (r.saved && r.held) {
+      if (r.offer && handoffs.indexOf(r.offer) < 0) handoffs.push(r.offer);
+      return;
+    }
     if (!r.saved || !r.delivered) return;
     // For a safety risk, a plain fact with no promise about who is available or when.
     const h = r.urgent ? 'I\'ve let ' + (team[r.category] || 'our team') + ' know about this right away.' : r.handoff;
     if (h && handoffs.indexOf(h) < 0) handoffs.push(h);
   });
   if (handoffs.length) facts.push(handoffs.join(' '));
-  if (results.some(function (r) { return r.saved && !r.delivered; })) {
+  if (results.some(function (r) { return r.saved && !r.delivered && !r.held; })) {
     facts.push('I\'ve noted this, but I couldn\'t reach the team just now. I\'ll keep trying and make sure it gets to them.' +
       (urgent ? ' Because this is urgent, please also contact ' + ops + ' directly.' : ''));
   }
@@ -3023,6 +3281,8 @@ const EVAL_TICKETS = {
   leave: { id: 'INAVA-261020-001', category: 'RECRUITMENT_HR', status: 'Assigned', open: true, raised: '20 Oct', summary: 'I need to file leave on Dec 24 for my sister\'s wedding.' },
   pay: { id: 'INAVA-261021-002', category: 'PAYROLL', status: 'In Progress', open: true, raised: '21 Oct', summary: 'I have not received my pay for the Oct 15 cutoff.' },
   acme: { id: 'INAVA-261022-003', category: 'CLIENT_CARE', status: 'Awaiting Response', open: true, raised: '22 Oct', summary: 'My client Acme is unhappy with my weekly report and said it is late every time.' },
+  // Waiting on the VA: Ask INAVA gave advice and has not passed it on yet.
+  tool: { id: 'INAVA-261023-004', category: 'OPERATIONS', status: WAITING_STATUS, open: true, waiting: true, raised: '23 Oct', summary: 'My Hubstaff timer will not start this morning.' },
 };
 
 function evalTicketRecords_(keys) {
@@ -3095,6 +3355,11 @@ const EVAL_CASES = [
   // Uses today's date: a leave 3 days away is already past the 2-week filing deadline.
   { lang: 'English', text: 'I want to take leave 3 days from today. Can I still file it in time?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], policy: 'late' },
   { lang: 'Bisaya', text: 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.', tickets: ['acme'], intent: ['FOLLOW_UP'], n: [1, 1], related: 'acme' },
+  // Help first, then check: a tool problem the advice may fix waits for the VA (if it is a concern
+  // at all); "it works now" closes it; "still not working" passes it on.
+  { lang: 'English', text: 'My Hubstaff timer won\'t start this morning, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
+  { lang: 'Bisaya', text: 'Okay na diay, nigana na akong Hubstaff. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
+  { lang: 'English', text: 'I tried that but the Hubstaff timer still won\'t start. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
 ];
 
 function runLanguageEval() {
@@ -3127,9 +3392,11 @@ function runLanguageEval() {
         const status = d.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
           ? statusReply_(user, which || 'NONE', false, evalTicketRecords_(c.tickets || []), c.text) : '';
         d.shown = composeReply_(d, status, (d.concerns || []).map(function (x) {
-          const followUp = String(x.related_ticket || '').toUpperCase() !== 'NEW';
-          return { saved: true, delivered: true, handoff: safeHandoff_(x.category, x.handoff, followUp),
-            urgent: x.urgent_safety === true, category: x.category };
+          const related = String(x.related_ticket || '').toUpperCase();
+          const followUp = related !== 'NEW' && !(c.tickets || []).some(function (k) { return EVAL_TICKETS[k].waiting && EVAL_TICKETS[k].id === related; });
+          const held = !followUp && related === 'NEW' && x.sensitive_personal !== true && wouldHold_(x);
+          return { saved: true, delivered: !held, held: held, offer: held ? safeOffer_(x.category, x.offer) : '',
+            handoff: safeHandoff_(x.category, x.handoff, followUp), urgent: x.urgent_safety === true, category: x.category };
         }), { inDm: true });
         const shownProblems = evalShownProblems_(c, d);
         problems = problems.concat(shownProblems);
@@ -3198,6 +3465,14 @@ function evalProblems_(c, d) {
   if (lang && c.lang === 'Tagalog' && !/^Tagalog/.test(lang)) p.push('reply not in Tagalog (' + lang.split(',')[0] + ')');
   if (lang && c.lang === 'Bisaya' && !/^Bisaya/.test(lang)) p.push('reply not in Bisaya (' + lang.split(',')[0] + ')');
   if (lang && c.lang === 'English' && lang !== 'English') p.push('reply not in English (' + lang.split(',')[0] + ')');
+  const held = concerns.filter(function (x) { return String(x.related_ticket || '').toUpperCase() === 'NEW' && x.sensitive_personal !== true && wouldHold_(x); });
+  if (c.hold === true && concerns.length && !held.length) p.push('not held for a check-in (sent to the team at once)');
+  // A case that must reach the team (n[0] >= 1) must not wait; where a concern is optional, waiting is a note.
+  if (c.hold !== true && held.length) p.push((c.n[0] >= 1 ? '' : 'note: ') + 'held for a check-in instead of passing on at once');
+  if (held.some(function (x) { return !String(x.check_in || '').trim(); })) p.push('note: no check-in text (default used)');
+  const sorted = (d.resolved_tickets || []).map(function (x) { return String(x).toUpperCase(); });
+  if (c.resolved && sorted.indexOf(id(c.resolved)) < 0) p.push('did not mark ' + id(c.resolved) + ' as sorted');
+  if (!c.resolved && sorted.length) p.push('wrongly marked a concern as sorted');
   if (c.policy === 'leave') {
     const r = d.reply;
     if (!/(two|2|dalawang|duha)\s*(\(2\)\s*)?(ka\s+)?(weeks?|linggo|semana)/i.test(r)) p.push('leave: two-week rule missing');

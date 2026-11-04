@@ -75,6 +75,13 @@ const SYSTEM_PROMPT = [
   '- Your "reply" is the caring, helpful part only: acknowledge how they feel, give useful advice or the policy, and ask for any missing detail that would help. Offering, as a question, to pass something on is fine.',
   '- status_ticket: for a status question, the ID of the one concern they mean (open or recently resolved, from the list); "AMBIGUOUS" if more than one could match; "NONE" if none matches. Empty when they are not asking about status.',
   '',
+  'Help first, then check',
+  '- can_resolve_here: true only when your reply gives practical steps that may fully sort the problem out without anyone on the team (for example a tool, login or tracker problem with steps to try), they have not asked for a person, and it needs no decision, approval, payment, protection or record. False for pay, leave, schedules, contracts, mistreatment, harassment, conduct, safety, anything HIGH or URGENT, anything you could not answer, and whenever they asked for someone to step in. When true, the concern is not passed on yet: the system asks them later whether it is sorted, and passes it on only if they still need help.',
+  '- offer: when can_resolve_here is true, one short question in their language asking whether that helped and offering to pass it to the team member for its category, using the name in Team members (for example "Did that help? If not, just tell me and I can pass it to Ms. Mabelle from our Operations team."). Put the [HANDOFF] marker in "reply" where it goes, and do not write a similar offer in "reply" yourself. Otherwise empty.',
+  '- check_in: when can_resolve_here is true, a short, friendly message in their language that the system sends if they go quiet, asking whether it is sorted now and offering to pass it on (for example "Just checking in: is your Hubstaff tracking again? If not, I can pass it to Ms. Mabelle from our Operations team."). No greeting. Otherwise empty.',
+  '- Concerns marked "waiting for their answer" in the request have not been passed on yet. If they say it is still not working, it did not help, or they want it passed on, that is FOLLOW_UP with related_ticket = that ID and can_resolve_here false.',
+  '- resolved_tickets: the IDs of their own open concerns (from the list) that they clearly say are now sorted, fixed, or no longer needed ("okay na, gumana na", "never mind, it\'s fixed", "ok na siya, salamat"). A plain "thanks" or "okay" does not count unless it clearly says the problem is fixed. If unsure, leave it empty. When they say it is sorted, reply briefly and warmly ("Glad it\'s working now!"); never say that you closed, removed or updated anything.',
+  '',
   'Examples (English, Tagalog, Bisaya and mixed messages are all normal)',
   '- "hi! salamat sa tabang ganina" -> CASUAL.',
   '- "Pwede ba mag-leave sa Dec 24? Paano mag-file?" -> QUESTION (answer from the documents).',
@@ -131,17 +138,22 @@ function responseSchema_() {
             sensitive_personal: { type: 'boolean', description: 'Self-harm, sexual assault, or a serious medical or mental-health crisis.' },
             recommended_action: str,
             handoff: { type: 'string', description: 'One sentence: who this was passed to. Shown only after delivery.' },
+            can_resolve_here: { type: 'boolean', description: 'True only when your advice may fully sort this out without the team (see "Help first, then check").' },
+            offer: { type: 'string', description: 'When can_resolve_here: one question asking if that helped, offering to pass it on. Otherwise empty.' },
+            check_in: { type: 'string', description: 'When can_resolve_here: a short message to send if they go quiet. Otherwise empty.' },
           },
-          required: ['category', 'priority', 'concern_text', 'related_ticket', 'urgent_safety', 'sensitive_personal', 'recommended_action', 'handoff'],
+          required: ['category', 'priority', 'concern_text', 'related_ticket', 'urgent_safety', 'sensitive_personal', 'recommended_action', 'handoff',
+            'can_resolve_here', 'offer', 'check_in'],
           additionalProperties: false,
         },
       },
       status_ticket: { type: 'string', description: 'For a status question: a concern ID, "AMBIGUOUS" or "NONE". Otherwise empty.' },
+      resolved_tickets: { type: 'array', items: str, description: 'IDs of their own open concerns they clearly say are now sorted or no longer needed.' },
       sources: { type: 'array', items: str, description: 'Exact titles of the documents relied on.' },
       // Written last, after the handoff sentences, so the reply does not repeat them.
       reply: { type: 'string', description: 'The caring, helpful part only, with [HANDOFF] where the handoff goes. Never says or hints that anything was or will be passed on, added, noted or shared, and never states a status. Empty for a status question.' },
     },
-    required: ['intent', 'concerns', 'status_ticket', 'sources', 'reply'],
+    required: ['intent', 'concerns', 'status_ticket', 'resolved_tickets', 'sources', 'reply'],
     additionalProperties: false,
   };
 }
@@ -264,7 +276,8 @@ function formatRequest_(input) {
   // Only this person's own concerns, already redacted when stored.
   const tickets = (input.tickets || []).length
     ? input.tickets.map(function (t) {
-      return '- ' + t.id + ' (' + (t.open ? 'open' : 'resolved') + ', ' + t.category + ', raised ' + t.raised + '): ' +
+      return '- ' + t.id + ' (' + (t.waiting ? 'open, waiting for their answer: not passed on yet' : t.open ? 'open' : 'resolved') +
+        ', ' + t.category + ', raised ' + t.raised + '): ' +
         String(t.summary).slice(0, 400);
     }).join('\n')
     : '(none)';

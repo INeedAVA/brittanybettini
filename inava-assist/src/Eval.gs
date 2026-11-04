@@ -23,6 +23,8 @@ const EVAL_TICKETS = {
   leave: { id: 'INAVA-261020-001', category: 'RECRUITMENT_HR', status: 'Assigned', open: true, raised: '20 Oct', summary: 'I need to file leave on Dec 24 for my sister\'s wedding.' },
   pay: { id: 'INAVA-261021-002', category: 'PAYROLL', status: 'In Progress', open: true, raised: '21 Oct', summary: 'I have not received my pay for the Oct 15 cutoff.' },
   acme: { id: 'INAVA-261022-003', category: 'CLIENT_CARE', status: 'Awaiting Response', open: true, raised: '22 Oct', summary: 'My client Acme is unhappy with my weekly report and said it is late every time.' },
+  // Waiting on the VA: Ask INAVA gave advice and has not passed it on yet.
+  tool: { id: 'INAVA-261023-004', category: 'OPERATIONS', status: WAITING_STATUS, open: true, waiting: true, raised: '23 Oct', summary: 'My Hubstaff timer will not start this morning.' },
 };
 
 function evalTicketRecords_(keys) {
@@ -95,6 +97,11 @@ const EVAL_CASES = [
   // Uses today's date: a leave 3 days away is already past the 2-week filing deadline.
   { lang: 'English', text: 'I want to take leave 3 days from today. Can I still file it in time?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], policy: 'late' },
   { lang: 'Bisaya', text: 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.', tickets: ['acme'], intent: ['FOLLOW_UP'], n: [1, 1], related: 'acme' },
+  // Help first, then check: a tool problem the advice may fix waits for the VA (if it is a concern
+  // at all); "it works now" closes it; "still not working" passes it on.
+  { lang: 'English', text: 'My Hubstaff timer won\'t start this morning, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
+  { lang: 'Bisaya', text: 'Okay na diay, nigana na akong Hubstaff. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
+  { lang: 'English', text: 'I tried that but the Hubstaff timer still won\'t start. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
 ];
 
 function runLanguageEval() {
@@ -127,9 +134,11 @@ function runLanguageEval() {
         const status = d.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
           ? statusReply_(user, which || 'NONE', false, evalTicketRecords_(c.tickets || []), c.text) : '';
         d.shown = composeReply_(d, status, (d.concerns || []).map(function (x) {
-          const followUp = String(x.related_ticket || '').toUpperCase() !== 'NEW';
-          return { saved: true, delivered: true, handoff: safeHandoff_(x.category, x.handoff, followUp),
-            urgent: x.urgent_safety === true, category: x.category };
+          const related = String(x.related_ticket || '').toUpperCase();
+          const followUp = related !== 'NEW' && !(c.tickets || []).some(function (k) { return EVAL_TICKETS[k].waiting && EVAL_TICKETS[k].id === related; });
+          const held = !followUp && related === 'NEW' && x.sensitive_personal !== true && wouldHold_(x);
+          return { saved: true, delivered: !held, held: held, offer: held ? safeOffer_(x.category, x.offer) : '',
+            handoff: safeHandoff_(x.category, x.handoff, followUp), urgent: x.urgent_safety === true, category: x.category };
         }), { inDm: true });
         const shownProblems = evalShownProblems_(c, d);
         problems = problems.concat(shownProblems);
@@ -198,6 +207,14 @@ function evalProblems_(c, d) {
   if (lang && c.lang === 'Tagalog' && !/^Tagalog/.test(lang)) p.push('reply not in Tagalog (' + lang.split(',')[0] + ')');
   if (lang && c.lang === 'Bisaya' && !/^Bisaya/.test(lang)) p.push('reply not in Bisaya (' + lang.split(',')[0] + ')');
   if (lang && c.lang === 'English' && lang !== 'English') p.push('reply not in English (' + lang.split(',')[0] + ')');
+  const held = concerns.filter(function (x) { return String(x.related_ticket || '').toUpperCase() === 'NEW' && x.sensitive_personal !== true && wouldHold_(x); });
+  if (c.hold === true && concerns.length && !held.length) p.push('not held for a check-in (sent to the team at once)');
+  // A case that must reach the team (n[0] >= 1) must not wait; where a concern is optional, waiting is a note.
+  if (c.hold !== true && held.length) p.push((c.n[0] >= 1 ? '' : 'note: ') + 'held for a check-in instead of passing on at once');
+  if (held.some(function (x) { return !String(x.check_in || '').trim(); })) p.push('note: no check-in text (default used)');
+  const sorted = (d.resolved_tickets || []).map(function (x) { return String(x).toUpperCase(); });
+  if (c.resolved && sorted.indexOf(id(c.resolved)) < 0) p.push('did not mark ' + id(c.resolved) + ' as sorted');
+  if (!c.resolved && sorted.length) p.push('wrongly marked a concern as sorted');
   if (c.policy === 'leave') {
     const r = d.reply;
     if (!/(two|2|dalawang|duha)\s*(\(2\)\s*)?(ka\s+)?(weeks?|linggo|semana)/i.test(r)) p.push('leave: two-week rule missing');

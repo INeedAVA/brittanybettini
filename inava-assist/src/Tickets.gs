@@ -111,6 +111,10 @@ function readTickets_() {
       delivery: String(r['Delivery'] || ''),
       deliveryAttempts: Number(r['Delivery Attempts'] || 0),
       urgentNotice: String(r['Urgent Notice'] || ''),
+      waitingSince: r['Waiting Since'] instanceof Date ? r['Waiting Since'] : (r['Waiting Since'] ? new Date(r['Waiting Since']) : null),
+      checkInSent: r['Check-in Sent'] instanceof Date ? r['Check-in Sent'] : (r['Check-in Sent'] ? new Date(r['Check-in Sent']) : null),
+      checkInMessage: String(r['Check-in Message'] || ''),
+      replyThread: String(r['Reply Thread'] || ''),
     };
   });
 }
@@ -314,6 +318,16 @@ function escalateConcerns_(concerns, user, source) {
         // A highly sensitive personal disclosure is never stored or shown in words: the team sees a
         // generic line and contacts the VA privately. An update on such a concern is treated the same.
         const sensitive = c.sensitive_personal === true || !!(related && related.summary === SENSITIVE_TEXT);
+        if (related && related.status === WAITING_STATUS) {
+          // They still need help with a concern that was waiting: now it goes to the team.
+          if (updated[related.id]) return;
+          updated[related.id] = true;
+          const added = redactConcern_(related.category, concernTextFor_(c, source.message, valid.length));
+          const ok = releaseHeld_(related, user, 'they still needed help', added, ref);
+          results.push({ ticketId: related.id, category: related.category, isNew: true, saved: true, delivered: ok,
+            handoff: safeHandoff_(related.category, c.handoff, false), urgent: false });
+          return;
+        }
         if (related) {
           const text = sensitive ? SENSITIVE_TEXT : redactConcern_(c.category === 'PAYROLL' ? 'PAYROLL' : related.category,
             concernTextFor_(c, source.message, valid.length));
@@ -328,9 +342,11 @@ function escalateConcerns_(concerns, user, source) {
             handoff: safeHandoff_(related.category, c.handoff, true), urgent: urgent });
         } else {
           const raw = sensitive ? SENSITIVE_TEXT : concernTextFor_(c, source.message, valid.length);
-          const t = createTicket_(c, raw, user, source, ref, earlier);
+          const hold = !sensitive && wouldHold_(c);
+          const t = createTicket_(c, raw, user, source, ref, earlier, hold);
           results.push({ ticketId: t.id, category: c.category, isNew: true, saved: true, delivered: t.delivered,
-            handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent });
+            handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent,
+            held: hold, offer: hold ? safeOffer_(c.category, c.offer) : '' });
         }
       } catch (e) {
         console.error('Could not record a concern: ' + e);
@@ -345,7 +361,7 @@ function escalateConcerns_(concerns, user, source) {
 }
 
 /** Saves a new ticket, then posts the NEW CONCERN card. Returns the ticket with .delivered. */
-function createTicket_(c, raw, user, source, ref, earlier) {
+function createTicket_(c, raw, user, source, ref, earlier, hold) {
   const category = c.category;
   const text = redactConcern_(category, raw);
   const urgent = c.urgent_safety === true;
@@ -355,10 +371,12 @@ function createTicket_(c, raw, user, source, ref, earlier) {
   const slaHours = routing ? routing.sla[priority] : DEFAULT_SLA_HOURS[priority];
   const created = historyLine_('Created from a message by ' + user.name +
     (earlier ? ' (follows up on ' + earlier.id + ', which was marked sorted)' : '') +
-    (urgent ? '. Marked as an urgent safety concern.' : ''));
+    (urgent ? '. Marked as an urgent safety concern.' : '') +
+    (hold ? '. Ask INAVA gave advice first and is waiting to hear from ' + firstName_(user.name) +
+      ' whether it helped (not passed to the team yet).' : ''));
   const ticket = {
     id: nextTicketId_(),
-    status: 'New',
+    status: hold ? WAITING_STATUS : 'New',
     category: category,
     priority: priority,
     assigneeName: routing ? routing.name : '',
@@ -373,7 +391,7 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     dueBy: new Date(now.getTime() + slaHours * 3600 * 1000),
     history: created,
     sourceRefs: ref ? [ref] : [],
-    delivery: 'Pending',
+    delivery: hold ? 'Held' : 'Pending',
     deliveryAttempts: 0,
     urgentNotice: urgent ? 'Pending' : '',
   };
@@ -397,13 +415,20 @@ function createTicket_(c, raw, user, source, ref, earlier) {
     'Reminders Sent': 0,
     'History': ticket.history,
     'Source Message ID': ticket.sourceRefs.join(' '),
-    'Delivery': 'Pending',
+    'Delivery': ticket.delivery,
     'Delivery Attempts': 0,
     'Urgent Notice': ticket.urgentNotice,
+    'Waiting Since': hold ? now : '',
+    'Check-in Message': hold ? safeCheckIn_(category, c.check_in) : '',
+    'Reply Thread': hold && !source.isDm ? (source.thread || '') : '',
   });
   if (!ticket.row) throw new Error('The ticket row number was not returned by the Sheets API.');
   audit_({ email: user.email, role: user.role, space: source.spaceId, action: 'TICKET_CREATED', ticketId: ticket.id,
-    detail: category + ' / ' + priority + (urgent ? ' / urgent safety' : '') });
+    detail: category + ' / ' + priority + (urgent ? ' / urgent safety' : '') + (hold ? ' / waiting on VA' : '') });
+  if (hold) {
+    ticket.delivered = false;
+    return ticket;
+  }
 
   // A payroll contact cleared for details gets the figures privately (never in the team chat,
   // never stored); credentials are removed for everyone.
@@ -608,19 +633,21 @@ function firstName_(name) {
  * @param {boolean} isFollowUp true for a further message about an open concern
  * @param {string} postKey names the Chat message ("new", "u-1a2b3c4d") so a retry never posts twice
  */
-function notifyAssignee_(ticket, message, isFollowUp, postKey) {
+function notifyAssignee_(ticket, message, isFollowUp, postKey, options) {
+  options = options || {};
   const messageId = clientMessageId_(ticket.id + '-' + (postKey || (isFollowUp ? 'u-' + shortHash_(message) : 'new')));
   const routing = getRouting_(ticket.category);
   const cleared = ticket.category !== 'PAYROLL' || (routing && routing.payrollCleared &&
     (ticket.assigneeEmail === routing.email || ticket.assigneeEmail === routing.backupEmail));
-  const details = cleared ? message
+  // options.plain: text written by Ask INAVA itself (no figures), shown to everyone as it is.
+  const details = cleared || options.plain ? message
     : 'Payroll matter (details are private, please contact ' + firstName_(ticket.requesterName) + ' directly)';
 
   // Blank lines between lines: Google Chat may join single line breaks.
   const parts = [isFollowUp ? 'Update on a concern' : 'New concern'];
   parts.push(concernLines_(ticket, details));
   if (ticket.sourceLink) parts.push('Conversation: ' + ticket.sourceLink);
-  parts.push(DONE_LINE + ticket.id);
+  if (!options.closed) parts.push(DONE_LINE + ticket.id);
   const text = parts.join('\n\n');
 
   // Everything goes to the team chat when one is set up. Payroll figures and account
@@ -747,7 +774,7 @@ function matchStatus_(words) {
 /** "my tickets": open tickets assigned to this person (staff) or raised by them. */
 function describeMyTickets_(user) {
   const all = readTickets_().filter(function (t) { return t.status !== 'Resolved'; });
-  const assigned = all.filter(function (t) { return t.assigneeEmail === user.email; });
+  const assigned = all.filter(function (t) { return t.assigneeEmail === user.email && t.status !== WAITING_STATUS; });
   const raised = all.filter(function (t) { return t.requesterEmail === user.email; });
   const lines = [];
   if (assigned.length) {
@@ -762,8 +789,9 @@ function describeMyTickets_(user) {
     if (lines.length) lines.push('');
     lines.push('Things I\'ve passed on for you:');
     raised.forEach(function (t) {
-      lines.push('- ' + formatTime_(t.created) + ': with ' + (teamNames_()[t.category] || 'our team') +
-        ' (' + t.status.toLowerCase() + ')');
+      lines.push('- ' + formatTime_(t.created) + ': ' + (t.status === WAITING_STATUS
+        ? 'not passed on yet (tell me if you still need help and I\'ll pass it to ' + (teamNames_()[t.category] || 'our team') + ')'
+        : 'with ' + (teamNames_()[t.category] || 'our team') + ' (' + t.status.toLowerCase() + ')'));
     });
   }
   return lines.length ? lines.join('\n') : 'Nothing open right now.';
@@ -812,6 +840,8 @@ function statusLine_(t) {
       return Who + ' is working on it.';
     case 'Awaiting Response':
       return Who + ' is waiting for a reply from you on this one. Please check your messages and email.';
+    case WAITING_STATUS:
+      return 'I haven\'t passed that one on yet, because I wanted to check first whether my suggestions helped. If it\'s still not sorted, just tell me and I\'ll pass it to ' + who + '.';
     case 'Resolved':
       return Who + ' marked it as sorted on ' + shortDate_(t.updated || t.created) +
         '. If it\'s still not right, tell me what\'s happening and I\'ll pass it on again.';
@@ -894,7 +924,8 @@ function statusReply_(user, which, inSharedSpace, records, message) {
 function checkOverdueTickets() {
   resetMemo_();
   const now = Date.now();
-  const open = readTickets_().filter(function (t) { return t.status !== 'Resolved'; })
+  // Concerns still waiting on the VA have not been passed to the team, so they are not listed.
+  const open = readTickets_().filter(function (t) { return t.status !== 'Resolved' && t.status !== WAITING_STATUS; })
     .sort(function (a, b) { return a.created - b.created; });
   if (!open.length) return;
 
@@ -919,4 +950,190 @@ function checkOverdueTickets() {
   open.forEach(function (t) {
     updateObject_(SHEETS.TICKETS, t.row, { 'Reminders Sent': t.remindersSent + 1, 'Last Reminder': new Date() });
   });
+}
+
+// ---- Help first, then check (Waiting on VA) ----
+
+/**
+ * True when a NEW concern should wait for the VA instead of going to the team at once: the AI
+ * thinks its own advice may sort it out, and it is low-stakes. Pay, HR matters (leave, conduct,
+ * mistreatment), anything HIGH or URGENT, safety and sensitive matters always go straight away.
+ */
+function wouldHold_(c) {
+  if (String(getProp_('CHECK_IN_MINUTES')).trim().toLowerCase() === 'off') return false;
+  return c.can_resolve_here === true && c.urgent_safety !== true && c.sensitive_personal !== true &&
+    (c.category === 'CLIENT_CARE' || c.category === 'OPERATIONS') && (c.priority === 'LOW' || c.priority === 'NORMAL');
+}
+
+/** The "did that help?" question shown instead of the handoff, never claiming anything was passed on. */
+function safeOffer_(category, text) {
+  const own = cleanReply_(String(text || '').replace(HANDOFF_MARKER, '')).trim();
+  if (own && OFFER.test(own) || own && /\?\s*$/.test(own)) return own;
+  return 'Did that help? If not, just tell me and I can pass it to ' + (teamNames_()[category] || 'our team') + '.';
+}
+
+function safeCheckIn_(category, text) {
+  const own = cleanReply_(String(text || '').replace(HANDOFF_MARKER, '')).trim();
+  if (own) return own;
+  return 'Just checking in: is this sorted now? If not, just tell me and I can pass it to ' + (teamNames_()[category] || 'our team') + '.';
+}
+
+/**
+ * Sends a waiting concern to the team (it becomes a normal concern). Call inside the script lock.
+ * @param {string} why for the history ("they still needed help", "no check-in possible")
+ * @param {string} added what the VA added later (already redacted), or ''
+ * @return {boolean} delivered
+ */
+function releaseHeld_(ticket, user, why, added, ref) {
+  const routing = getRouting_(ticket.category) || getRouting_('OPERATIONS');
+  const slaHours = routing ? routing.sla[ticket.priority] : DEFAULT_SLA_HOURS[ticket.priority];
+  const fields = { 'Status': 'New', 'Delivery': 'Pending', 'Due By': new Date(Date.now() + (slaHours || 24) * 3600 * 1000) };
+  if (ref) fields['Source Message ID'] = ticket.sourceRefs.concat([ref]).join(' ');
+  updateObject_(SHEETS.TICKETS, ticket.row, fields);
+  ticket.status = 'New';
+  ticket.delivery = 'Pending';
+  appendHistory_(ticket, 'Passed to the team: ' + why + (added ? '. ' + firstName_(ticket.requesterName) + ' added: ' + added : ''));
+  audit_({ email: user ? user.email : ticket.requesterEmail, role: user ? user.role : '', action: 'TICKET_RELEASED', ticketId: ticket.id, detail: why });
+  const message = ticket.summary + (added && added !== ticket.summary ? '\n\nThey added later: ' + added : '');
+  const ok = deliverNewTicket_(ticket, ticket.deliveryAttempts + 1, message);
+  if (!ok) alertOperations_(ticket, { name: ticket.requesterName, email: ticket.requesterEmail });
+  return ok;
+}
+
+/**
+ * The VA says one or more of their own open concerns are sorted.
+ * - Waiting on VA: closed, nothing is posted (the team never had it).
+ * - Already with the team: closed, and the team gets a short update card.
+ * - Pay, urgent safety or sensitive matters: left open for the team to confirm; the team gets the update.
+ * @return {string[]} the IDs that were closed or reported
+ */
+function resolveByRequester_(ids, user, skip) {
+  const wanted = (ids || []).map(function (x) { return String(x || '').trim().toUpperCase(); })
+    .filter(function (x, i, arr) { return x && arr.indexOf(x) === i && (skip || []).indexOf(x) < 0; });
+  if (!wanted.length) return [];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  const done = [];
+  try {
+    resetMemo_();
+    readTickets_().filter(function (t) {
+      return t.requesterEmail === user.email && t.status !== 'Resolved' && wanted.indexOf(t.id.toUpperCase()) >= 0;
+    }).forEach(function (t) {
+      try {
+        const first = firstName_(user.name);
+        if (t.status === WAITING_STATUS) {
+          updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved', 'Delivery': 'Not needed' });
+          appendHistory_(t, 'Resolved by VA: ' + user.name + ' said it was sorted, so it was not passed to the team');
+          audit_({ email: user.email, role: user.role, action: 'TICKET_RESOLVED_BY_VA', ticketId: t.id, detail: 'waiting on VA, not passed on' });
+          done.push(t.id);
+          return;
+        }
+        const keepOpen = t.category === 'PAYROLL' || t.priority === 'URGENT' || !!t.urgentNotice || t.summary === SENSITIVE_TEXT;
+        // Saved but never reached the team chat (a delivery problem): close it without an update.
+        if (!keepOpen && /^(?:Pending|Failed)$/.test(t.delivery)) {
+          updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved', 'Delivery': 'Not needed' });
+          appendHistory_(t, 'Resolved by VA: ' + user.name + ' said it was sorted before it reached the team');
+          audit_({ email: user.email, role: user.role, action: 'TICKET_RESOLVED_BY_VA', ticketId: t.id, detail: 'closed before delivery' });
+          done.push(t.id);
+          return;
+        }
+        const note = keepOpen
+          ? first + ' says this is sorted now. Please confirm with them before marking it as done.'
+          : first + ' says this is sorted now, so Ask INAVA has closed it. Nothing more to do unless they raise it again.';
+        if (!keepOpen) updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved' });
+        appendHistory_(t, keepOpen ? 'VA said it was sorted; left open for the team to confirm'
+          : 'Resolved by VA: ' + user.name + ' said it was sorted');
+        const posted = notifyAssignee_(t, note, true, 'sorted-' + (t.history.match(/said it was sorted/g) || []).length,
+          { plain: true, closed: !keepOpen });
+        if (!posted) appendHistory_(t, 'Could not post the "sorted" update to the team');
+        audit_({ email: user.email, role: user.role, action: 'TICKET_RESOLVED_BY_VA', ticketId: t.id,
+          detail: (keepOpen ? 'left open for the team to confirm' : 'closed') + (posted ? ', team told' : ', team NOT told') });
+        done.push(t.id);
+      } catch (e) {
+        console.error('Could not mark ' + t.id + ' as sorted: ' + e);
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+  return done;
+}
+
+/** The VA wrote again before the check-in: their waiting concerns wait 15 minutes from now. */
+function touchWaiting_(tickets) {
+  (tickets || []).filter(function (t) { return t.status === WAITING_STATUS && !t.checkInSent; }).forEach(function (t) {
+    try {
+      updateObject_(SHEETS.TICKETS, t.row, { 'Waiting Since': new Date() });
+    } catch (e) {
+      console.warn('Could not update Waiting Since for ' + t.id + ': ' + e);
+    }
+  });
+}
+
+/**
+ * Runs every 5 minutes (installCheckInTrigger). For each concern waiting on a VA:
+ * - quiet for CHECK_IN_MINUTES: asks them once whether it is sorted (in their DM or thread);
+ * - quiet for CHECK_IN_CLOSE_HOURS after that: closes it quietly (it never reached the team).
+ * If the check-in cannot be sent, the concern goes to the team instead, so nothing is lost.
+ */
+function checkWaitingConcerns() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return;
+  try {
+    resetMemo_();
+    ensureColumns_(SHEETS.TICKETS);
+    const minutes = Number(getProp_('CHECK_IN_MINUTES')) || 15;
+    const closeHours = Number(getProp_('CHECK_IN_CLOSE_HOURS')) || 2;
+    const now = Date.now();
+    readTickets_().filter(function (t) { return t.status === WAITING_STATUS; }).forEach(function (t) {
+      try {
+        if (!t.checkInSent) {
+          const since = (t.waitingSince || t.created).getTime();
+          if (now - since < minutes * 60000) return;
+          if (sendCheckIn_(t)) {
+            updateObject_(SHEETS.TICKETS, t.row, { 'Check-in Sent': new Date() });
+            appendHistory_(t, 'Checked in with ' + firstName_(t.requesterName) + ' (no reply for ' + minutes + ' minutes)');
+            audit_({ email: t.requesterEmail, action: 'VA_CHECK_IN', ticketId: t.id });
+          } else {
+            releaseHeld_(t, null, 'Ask INAVA could not check in with the VA', '', '');
+          }
+          return;
+        }
+        if (now - t.checkInSent.getTime() >= closeHours * 3600000) {
+          updateObject_(SHEETS.TICKETS, t.row, { 'Status': 'Resolved', 'Delivery': 'Not needed' });
+          appendHistory_(t, 'Closed automatically: no reply ' + closeHours + ' hours after the check-in (not passed to the team)');
+          audit_({ email: t.requesterEmail, action: 'TICKET_AUTO_CLOSED', ticketId: t.id, detail: 'no reply after the check-in' });
+        }
+      } catch (e) {
+        console.error('Check-in for ' + t.id + ' failed: ' + e);
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Posts the check-in where the conversation happened. A retry never posts twice. */
+function sendCheckIn_(t) {
+  const text = t.checkInMessage || safeCheckIn_(t.category, '');
+  const messageId = clientMessageId_(t.id + '-checkin');
+  try {
+    if (t.replyThread) {
+      postMessage_(t.replyThread.split('/threads/')[0], text, t.replyThread, messageId);
+      return true;
+    }
+    return sendPrivateMessage_(t.requesterEmail, text, messageId);
+  } catch (e) {
+    // Already posted (a retry after a lost response) counts as sent.
+    if (/\b409\b|ALREADY_EXISTS/i.test(String(e))) return true;
+    console.error('Check-in for ' + t.id + ' could not be sent: ' + e);
+    return false;
+  }
+}
+
+/** Run once from the editor: checks waiting concerns every 5 minutes. Safe to run again. */
+function installCheckInTrigger() {
+  const exists = ScriptApp.getProjectTriggers().some(function (tr) { return tr.getHandlerFunction() === 'checkWaitingConcerns'; });
+  if (!exists) ScriptApp.newTrigger('checkWaitingConcerns').timeBased().everyMinutes(5).create();
+  console.log(exists ? 'The check-in trigger is already installed.' : 'Installed: checkWaitingConcerns runs every 5 minutes.');
 }

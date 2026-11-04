@@ -10,7 +10,8 @@
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets/';
 const DATA_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly';
-const DATE_COLUMNS = ['Created', 'Updated', 'Due By', 'Last Reminder', 'Time', 'Added On', 'Last Reviewed'];
+const DATE_COLUMNS = ['Created', 'Updated', 'Due By', 'Last Reminder', 'Time', 'Added On', 'Last Reviewed',
+  'Waiting Since', 'Check-in Sent'];
 
 // Rows read during this run, so one message doesn't re-read the same tab many times.
 var tableMemo_ = {};

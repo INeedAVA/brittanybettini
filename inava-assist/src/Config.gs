@@ -34,6 +34,12 @@ const DEFAULTS = {
   // Ask INAVA greets someone ("Hi Vicky!") only when they haven't messaged it for this many
   // days. In an ongoing conversation it just answers.
   GREETING_GAP_DAYS: '3',
+  // "Help first, then check": a concern that Ask INAVA's own advice may sort out waits (Status
+  // "Waiting on VA") instead of going to the team chat. If the VA hasn't replied after this many
+  // minutes, Ask INAVA asks whether it is sorted. Set to 'off' to pass every concern on at once.
+  CHECK_IN_MINUTES: '15',
+  // Hours after that check-in with no reply before the waiting concern is closed quietly.
+  CHECK_IN_CLOSE_HOURS: '2',
 };
 
 // Notes about known gaps or conflicts in the approved documents, sent with them to the AI.
@@ -84,6 +90,10 @@ const PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 
 const STATUSES = ['New', 'Assigned', 'In Progress', 'Awaiting Response', 'Resolved'];
 
+// A concern that has not been passed on yet: Ask INAVA gave advice and is waiting to hear from
+// the VA whether it helped (set and cleared only by Ask INAVA, never by a status command).
+const WAITING_STATUS = 'Waiting on VA';
+
 // Control spreadsheet tab names and column headers. setup() creates these.
 const SHEETS = {
   USERS: {
@@ -112,7 +122,10 @@ const SHEETS = {
       // ticket came from (so a retried event never makes a second ticket), and whether the
       // team chat has really received it (Pending tickets are re-sent safely).
       // Urgent Notice: the extra URGENT: SAFETY CONCERN card (Pending / Posted / Failed), retried like Delivery.
-      'Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice'],
+      'Source Message ID', 'Delivery', 'Delivery Attempts', 'Urgent Notice',
+      // "Help first, then check" (Waiting on VA): when the VA last wrote, when Ask INAVA checked in,
+      // the check-in text (in the VA's language), and the thread to post it in (blank for a DM).
+      'Waiting Since', 'Check-in Sent', 'Check-in Message', 'Reply Thread'],
   },
   AUDIT: {
     name: 'Audit Log',
