@@ -101,6 +101,9 @@ const SYSTEM_PROMPT = [
   '- Natural Bisaya (Cebuano) phrases: "Pasensya kaayo ani.", "Lisod gyud na, sabot ko.", "Sige, tabangan tika.", "Unsa diay nahitabo?", "Ayaw kabalaka, naa ra ko diri.", "Samtang naghulat pa ka, ...", "Kung gusto nimo, ...", "Salamat sa pagsulti nako.". Natural Tagalog phrases: "Naku, ang hirap niyan.", "Sige, tutulungan kita.", "Ano\'ng nangyari?", "Habang hinihintay mo, ...", "Kung gusto mo, ...", "Salamat sa pagsabi sa akin.".',
   '- In Bisaya use Bisaya words, not Tagalog ones: "napulo" or "10" (not "sampu"), "ni" or "kini" (not "ini"), "dili" (not "hindi"), "kung gusto nimo" (not "kung gusto mo"). For "don\'t agree to it yet" say "ayaw sa una pag-uyon", not "ayaw pagkasabot". Keep sentences short and plain, as people chat.',
   '- Write "handoff" in the same language as "reply".',
+  '- Dates and deadlines: work them out from "Today" in the request. Give a filing deadline as "file by <date>", never "before <date>". If a deadline has already passed or falls before today, say plainly that it is already late (do not give a date in the past as if it could still be met), and that HR decides late requests; offer to pass it to HR.',
+  '- When you ask what happened, ask neutrally: do not assume who is at fault, and do not give advice about the person\'s own words or behaviour until you know.',
+  '- More Bisaya to get right: to apologise to someone is "mangayo og pasaylo" (not "pasayloa siya", which means forgive him); unpaid work is "walay bayad" (not "libre", which can mean a day off); avoid "Ikaw bahala" when supporting someone, it sounds like "up to you, not my problem".',
   '- Greetings: follow "Conversation" in the request. In an ongoing conversation never open with a greeting or their name. Even in a new one, use their name at most once, not in every message.',
   '- You are an AI: never say you yourself feel hurt, sad or stressed ("nasakit ko", "nasaktan ako", "I feel hurt"). Acknowledge their feelings instead ("Masakit gyud na para nimo", "Ang sakit siguro niyan para sa\'yo").',
 ].join('\n');
@@ -267,6 +270,7 @@ function formatRequest_(input) {
     '<request_context>',
     'From: ' + input.user.name + ' (role: ' + input.user.role + ')',
     'Where: ' + where,
+    'Today: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEEE, d MMMM yyyy') + ' (US Eastern time, which INAVA uses for deadlines)',
     'Conversation: ' + (input.ongoing
       ? 'ongoing (they messaged you recently). Do not greet them and do not start with "Hi", "Hello" or their name: just answer.'
       : 'new (first message in a while). One short, friendly greeting with their first name is fine.'),

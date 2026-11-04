@@ -921,7 +921,7 @@ test('live language test: checks each case, writes results, never posts or creat
   assert.strictEqual(rows[0][0], 'Time');
   const total = rows[rows.length - 1];
   assert.strictEqual(total[1], 'TOTAL');
-  assert.match(total[11], /^\d+\/38 cases passed, estimated cost \$0\.0133/);
+  assert.match(total[11], /^\d+\/40 cases passed, estimated cost \$0\.0140/);
   assert.ok(rows.some((r) => r[10] === 'PASS') && rows.some((r) => r[10] === 'CHECK'));
   // A status case is answered by the real status code from the made-up record, not the AI's words.
   const statusRow = rows.find((r) => r[3] === 'Any update on my leave request?');
@@ -1502,6 +1502,18 @@ test('greetings: only at the start of a conversation, not on every reply', () =>
   // Ordinary first words are never mistaken for a greeting.
   assert.strictEqual(env.ctx.stripOpeningGreeting_('Hindi pa po, pero puwede kang mag-file.', 'Vicky'), 'Hindi pa po, pero puwede kang mag-file.');
   assert.strictEqual(env.ctx.stripOpeningGreeting_('Hi Vicky!', 'Vicky'), 'Hi Vicky!');
+});
+
+test('round 6: offers kept, sentences re-spaced, today\'s date sent for deadlines', () => {
+  const env = setupEnv();
+  const offer = 'If you\'re already close to a date or running late, let me know and I can pass your situation to our HR team so they can decide.';
+  assert.strictEqual(env.ctx.cleanReply_(offer), offer);
+  assert.strictEqual(env.ctx.cleanReply_('I\'ve passed this to HR so they can decide.'), '');
+  claudeReturns(env, answer({ reply: 'Walay sapayan! Sultihi lang ko.Naa ra ko diri. Visit va.portal.ineedava.com for details.' }));
+  const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Salamat kaayo!'));
+  assert.strictEqual(r.text, 'Walay sapayan! Sultihi lang ko. Naa ra ko diri. Visit va.portal.ineedava.com for details.');
+  assert.match(env.sent.claude.slice(-1)[0].body.messages.slice(-1)[0].content, /\nToday: .+ \(US Eastern time, which INAVA uses for deadlines\)\n/);
+  assert.match(env.sent.claude.slice(-1)[0].body.system[0].text, /never "before <date>"[^]*already late/);
 });
 
 let failed = 0;

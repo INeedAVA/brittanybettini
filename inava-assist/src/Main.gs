@@ -221,7 +221,9 @@ const HANDOFF_CLAIMS = [
   /\b(?:has|have|was|were|is|are)\s+(?:already\s+|now\s+)?(?:been\s+)?(?:passed|forwarded|escalated|flagged|shared|sent|reported|raised|referred|noted|logged|added|recorded|updated)\s+(?:on|along|to|with|for|in)\b/i,
   new RegExp('\\b(?:is|are)\\s+(?:now\\s+)?(?:with|in the hands of)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS, 'i'),
   // "Ms. Cynthia will get back to you", "the team will look at it with you", "so someone on the team can check in with you"
-  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to|can)\\s+(?:also\\s+|then\\s+)?(?:get back|contact|reach out|follow up|look into|look at|look over|check in|check on|review|call you|message you|be in touch|talk|speak|discuss|go over|handle|take care|sort|resolve|fix|decide|approve|meet)', 'i'),
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to)\\s+(?:also\\s+|then\\s+)?(?:get back|contact|reach out|follow up|look into|look at|look over|check in|check on|review|call you|message you|be in touch|talk|speak|discuss|go over|handle|take care|sort|resolve|fix|decide|approve|meet)', 'i'),
+  // "...can" only for contacting the VA: "so they can decide" states who decides, which is fine.
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\bcan\\s+(?:also\\s+)?(?:get back|contact you|reach out|follow up|look into|check in|check on|call you|message you|be in touch)', 'i'),
   // "until the team has spoken with you", "after someone from our team has called you"
   new RegExp('\\b(?:until|after|once|when)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS + '[^.!?]*\\b(?:has|have)\\s+(?:spoken|talked|contacted|reached|called|met|gotten back|got back|reviewed|looked|followed up)', 'i'),
   // "The team has reviewed / resolved it", "Ms. Cynthia already looked at it"
@@ -245,7 +247,7 @@ const HANDOFF_CLAIMS = [
   /\bakong\s+(?:i-?pasa|i-?forward|i-?report|i-?escalate|ipahibalo|ipaabot|i-?share|i-?note|idugang|i-?dugang|i-?flag|i-?record)\b/i,
 ];
 // Offers stay: "Would you like me to pass this to Ms. Cynthia?" (but not "I've passed it, okay?")
-const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo))\b/i;
+const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|let me know and I(?: can|'ll| will)|tell me and I(?: can|'ll| will)|I can (?:pass|forward|share|send|flag|raise)|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo))\b/i;
 const PAST_CLAIM = /\b(?:I'?ve|I have|we'?ve|already|naipasa|ipinasa|gipasa|na-?forward|gi-?forward|naipaalam|gipahibalo|naidagdag|gidugang|na-?note|gi-?share|na-?share)\b/i;
 
 function isHandoffClaim_(sentence) {
@@ -406,6 +408,8 @@ function composeReply_(decision, status, results, options) {
   let own = statusOnly ? '' : cleanReply_(decision.reply);
   if (inDm) own = removeSentences_(own, function (x) { return MOVE_TO_PRIVATE.test(x); });
   if (options && options.ongoing) own = stripOpeningGreeting_(own, options.firstName);
+  // A sentence glued to the previous one ("sultihi lang ko.Naa ra ko") gets its space back.
+  own = own.replace(/([a-z\u00C0-\u024F]{2}[.!?])([A-Z][a-z])/g, '$1 $2');
   let placed = false;
   if (own.search(HANDOFF_MARKER) >= 0) {
     let first = true;

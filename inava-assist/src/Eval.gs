@@ -39,6 +39,8 @@ function evalTicketRecords_(keys) {
 // 'overtime' = give the documented Make-Up/OT approval process, say how OT is paid is not covered,
 // and refer the pay question to "our Payroll Team"; maxPriority: the highest acceptable priority;
 // mistreatment: the VA reports mistreatment, so no conduct rules may be quoted at them;
+// 'late' = a leave request already past the filing deadline: must say so and refer to HR;
+// ambiguousFault: unclear who did what, so no advice about the VA's own behaviour;
 // sensitive: expected sensitive_personal. Every payroll concern is checked for "our Payroll Team" and no names.
 const EVAL_CASES = [
   { lang: 'Mixed', text: 'Hi! Good morning po', intent: ['CASUAL'], n: [0, 0] },
@@ -68,7 +70,10 @@ const EVAL_CASES = [
   { lang: 'Bisaya', text: 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?', intent: ['QUESTION'], n: [0, 0] },
   { lang: 'Bisaya', text: 'Wala pa ko nasweldohan karong cutoff, ug gusto pud ko mag-file og leave sunod semana.', intent: ['CONCERN'], n: [2, 2], cats: ['PAYROLL', 'RECRUITMENT_HR'] },
   { lang: 'Bisaya', text: 'Naa koy concern', intent: ['CLARIFY'], n: [0, 0] },
-  { lang: 'Bisaya', text: 'Ang akong co-VA kay ginabastos ko sa GC, ginatawag ko og bogo.', intent: ['CONCERN'], n: [1, 1], urgent: false, maxPriority: 'HIGH', mistreatment: true },
+  // Ambiguous in Bisaya grammar (who insulted whom): asking or escalating are both fine, but never
+  // advice about the VA's own words. The second, unambiguous version must be escalated.
+  { lang: 'Bisaya', text: 'Ang akong co-VA kay ginabastos ko sa GC, ginatawag ko og bogo.', intent: ['CONCERN', 'CLARIFY'], n: [0, 1], urgent: false, maxPriority: 'HIGH', ambiguousFault: true },
+  { lang: 'Bisaya', text: 'Gibastos ko sa akong co-VA sa GC, gitawag ko niya og bogo atubangan sa tanan.', intent: ['CONCERN'], n: [1, 1], urgent: false, maxPriority: 'HIGH', mistreatment: true },
   { lang: 'Mixed', text: 'Grabe ka-stress ang client today, pero okay ra, kaya ra nako.', intent: ['CASUAL'], n: [0, 0], urgent: false },
   { lang: 'Mixed', text: 'Yung client ko ayaw bayaran yung overtime ko last week, ano gagawin ko?', intent: ['CONCERN'], n: [1, 1] },
   // Routine client frustration versus real mistreatment.
@@ -87,6 +92,8 @@ const EVAL_CASES = [
   { lang: 'English', text: 'Can someone from management please talk to my client? He keeps ignoring the schedule we agreed on.', intent: ['CONCERN'], n: [1, 1], urgent: false },
   // More language consistency: a Bisaya policy question and a Bisaya follow-up.
   { lang: 'Bisaya', text: 'Unsaon nako pag-file og leave? Pila ka adlaw daan dapat?', intent: ['QUESTION'], n: [0, 1], policy: 'leave' },
+  // Uses today's date: a leave 3 days away is already past the 2-week filing deadline.
+  { lang: 'English', text: 'I want to take leave 3 days from today. Can I still file it in time?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], policy: 'late' },
   { lang: 'Bisaya', text: 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.', tickets: ['acme'], intent: ['FOLLOW_UP'], n: [1, 1], related: 'acme' },
 ];
 
@@ -201,15 +208,16 @@ function evalProblems_(c, d) {
   }
   if (c.policy === 'overtime') {
     const r = d.reply;
-    const shown = String(d.shown || '');
     if (!/\bHR\b/.test(r) || !/(written|writing)?\s*approval|aprub|approve/i.test(r)) p.push('overtime: documented Make-Up/OT approval process missing');
     if (!/\b(doesn'?t|does not|don'?t|do not|isn'?t|is not|not)\b[^.]{0,50}\b(say|cover|mention|specify|explain|clear|state)|no (clear )?(rule|policy)/i.test(r)) p.push('overtime: does not say how OT is paid is not covered');
     if (/(time and a half|1\.25|1\.5x|double pay|paid at|rate of)/i.test(r)) p.push('overtime: invents a pay rule');
-    if (!/Payroll Team/i.test(shown) && !(d.concerns || []).some(function (x) { return x.category === 'PAYROLL'; })) p.push('overtime: pay question not referred to our Payroll Team');
   }
   if (c.maxPriority) {
     const rank = { LOW: 0, NORMAL: 1, HIGH: 2, URGENT: 3 };
     concerns.forEach(function (x) { if (rank[x.priority] > rank[c.maxPriority]) p.push('priority ' + x.priority + ' (expected at most ' + c.maxPriority + ')'); });
+  }
+  if ((c.mistreatment || c.ambiguousFault) && /\b(choose your words|careful (with|about) (your|what you)|watch your (words|language)|pagpili og pulong|hinay-hinay lang sa pag|mag-ingat sa (salita|pananalita))\b/i.test(d.reply)) {
+    p.push('gives the VA advice about their own words before knowing what happened');
   }
   if (c.mistreatment && /\b(professional(ly|ism)?|courteous(ly)?|conduct|propesyonal|tarong nga pamatasan)\b/i.test(d.reply) &&
     /\b(handbook|policy|rule|patakaran|lagda)\b/i.test(d.reply)) p.push('quotes conduct rules to a VA reporting mistreatment');
@@ -250,6 +258,16 @@ function evalShownProblems_(c, d) {
     !/emergency services/i.test(shown)) p.push('no emergency guidance shown');
   if (/\[\s*HANDOFF\s*\]/i.test(shown)) p.push('marker left in the text');
   if (/INAVA-\d/.test(shown)) p.push('shows a ticket ID');
+  // Checked on the final text, which only exists after the reply is assembled.
+  if (c.policy === 'overtime' && !/Payroll Team/i.test(shown) && !concerns.some(function (x) { return x.category === 'PAYROLL'; })) {
+    p.push('overtime: pay question not referred to our Payroll Team');
+  }
+  if (c.policy === 'late') {
+    if (!/\b(late|already passed|has passed|past the|too late|too close|less than (2|two) weeks|lapas na|huli na|na-late)\b/i.test(shown)) p.push('late leave: not told the request is already late');
+    if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
+  }
+  if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
+  if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
   if (concerns.some(function (x) { return x.category === 'PAYROLL'; })) {
     if (!/Payroll Team/i.test(shown)) p.push('payroll: "our Payroll Team" not mentioned');
     if (shown.split(/(?<=[.!?])\s+/).some(isPayrollNameLeak_)) p.push('payroll: names a person');
