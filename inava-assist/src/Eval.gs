@@ -267,6 +267,8 @@ function evalShownProblems_(c, d) {
     if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
   }
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
+  if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
+    p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
   if (concerns.some(function (x) { return x.category === 'PAYROLL'; })) {
     if (!/Payroll Team/i.test(shown)) p.push('payroll: "our Payroll Team" not mentioned');
