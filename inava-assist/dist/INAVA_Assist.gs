@@ -666,7 +666,7 @@ const SYSTEM_PROMPT = [
   'Answering from the knowledge base',
   '- The approved INAVA documents this person may see are provided below inside <document> tags. They are the only source of truth for INAVA policies, procedures, pay, schedules, rates, agreements and company decisions.',
   '- Answer policy and procedure questions only from those documents. List the title of every document you relied on in "sources", using the exact title from the <document> tag.',
-  '- Sound like a colleague who simply knows the rules, not like someone reading from a manual. In everyday answers, give the information directly ("File your leave at least 2 weeks ahead."), without "according to the handbook", "the handbook says", "based on our approved documents" or similar. Mention where a rule comes from only when it is a serious matter: possible discipline or a policy violation, a lost bonus or pay deduction, contract terms, termination, or when someone questions or disputes the rule. Never mention "approved documents", the "knowledge base" or what you were given.',
+  '- Sound like a colleague who simply knows the rules, not like someone reading from a manual. In everyday answers, give the information directly ("File your leave at least 2 weeks ahead."), without "according to the handbook", "the handbook says", "per our FAQ", "our FAQ says", "based on our approved documents" or similar. Mention where a rule comes from only when it is a serious matter: possible discipline or a policy violation, a lost bonus or pay deduction, contract terms, termination, or when someone questions or disputes the rule. Never mention "approved documents", the "knowledge base" or what you were given.',
   '- Be resourceful. When the documents include links, contacts, places or resources that help with the question, share them. Lead with what the person can do or where they can go, not with what you cannot do, and do not mention that you are an AI as a reason.',
   '- Give the rule as written. When a document states a consequence (for example leave not permitted, or a bonus lost), present it as the written rule, not as a decision about this person: HR or management decides each case. Never say or imply that a request is approved, will be approved, or will be refused.',
   '- When someone reports being mistreated, do not quote conduct or professionalism rules at them: it can sound as if you are blaming them. Do not tell them to talk it out with, confront or settle it directly with the person who mistreated them ("talk to the person first" is for ordinary disagreements, not mistreatment). Stay empathetic, practical and neutral (what to note down, what to avoid, what happens next).',
@@ -2759,6 +2759,8 @@ const HANDOFF_CLAIMS = [
   new RegExp('\\b(?:is|are)\\s+(?:now\\s+)?(?:with|in the hands of)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS, 'i'),
   // "Ms. Cynthia will get back to you", "the team will look at it with you", "so someone on the team can check in with you"
   new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to)\\s+(?:also\\s+|then\\s+)?(?:get back|contact|reach out|follow up|look into|look at|look over|check in|check on|review|call you|message you|be in touch|talk|speak|discuss|go over|handle|take care|sort|resolve|fix|decide|approve|meet)', 'i'),
+  // "Ms. Vergelyn from our HR team will be able to confirm the specifics", "Payroll will help you"
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to)\\s+(?:also\\s+)?(?:be able to\\s+)?(?:confirm|answer|help|assist|explain|advise|clarify|update|let you know|tell you|give you)', 'i'),
   // "...can" only for contacting the VA: "so they can decide" states who decides, which is fine.
   new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\bcan\\s+(?:also\\s+)?(?:get back|contact you|reach out|follow up|look into|check in|check on|call you|message you|be in touch)', 'i'),
   // "until the team has spoken with you", "after someone from our team has called you"
@@ -3542,7 +3544,7 @@ function evalShownProblems_(c, d) {
     if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
   }
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
-  if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
+  if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|per (?:our|the) (?:\w+ )?(?:faq|handbook|policy)|(?:our|the) (?:\w+ )?faq (?:says|lists|states)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
     p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
   if (concerns.some(function (x) { return x.category === 'PAYROLL'; })) {

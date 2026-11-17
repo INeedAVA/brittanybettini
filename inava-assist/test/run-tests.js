@@ -1550,6 +1550,20 @@ test('round 8: Bisaya and Tagalog "just tell me and I\'ll pass it on" offers sta
   assert.strictEqual(clean('Okay. Gipasa na nako ni kang Ms. Cynthia.'), 'Okay.');
 });
 
+test('round 9: no "will be able to confirm" or "will follow up" promises about a team member', () => {
+  const env = setupEnv();
+  const clean = (t) => env.ctx.cleanReply_(t);
+  assert.strictEqual(clean('Healthcare is one of the perks. Ms. Vergelyn from our HR team will be able to confirm the specifics for you.'),
+    'Healthcare is one of the perks.');
+  assert.strictEqual(clean('Tell LJ what happened. Ms. Mabelle from our Operations team will follow up with you on the login issue.'),
+    'Tell LJ what happened.');
+  assert.strictEqual(clean('Our Payroll Team will help you with that.'), '');
+  // Offers and advice stay.
+  assert.strictEqual(clean('Would you like me to ask Ms. Vergelyn from our HR team to confirm the details?'),
+    'Would you like me to ask Ms. Vergelyn from our HR team to confirm the details?');
+  assert.strictEqual(clean('Please also tell LJ what happened so it can be looked into.'), 'Please also tell LJ what happened so it can be looked into.');
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));

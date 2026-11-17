@@ -231,6 +231,8 @@ const HANDOFF_CLAIMS = [
   new RegExp('\\b(?:is|are)\\s+(?:now\\s+)?(?:with|in the hands of)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS, 'i'),
   // "Ms. Cynthia will get back to you", "the team will look at it with you", "so someone on the team can check in with you"
   new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to)\\s+(?:also\\s+|then\\s+)?(?:get back|contact|reach out|follow up|look into|look at|look over|check in|check on|review|call you|message you|be in touch|talk|speak|discuss|go over|handle|take care|sort|resolve|fix|decide|approve|meet)', 'i'),
+  // "Ms. Vergelyn from our HR team will be able to confirm the specifics", "Payroll will help you"
+  new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to)\\s+(?:also\\s+)?(?:be able to\\s+)?(?:confirm|answer|help|assist|explain|advise|clarify|update|let you know|tell you|give you)', 'i'),
   // "...can" only for contacting the VA: "so they can decide" states who decides, which is fine.
   new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\bcan\\s+(?:also\\s+)?(?:get back|contact you|reach out|follow up|look into|check in|check on|call you|message you|be in touch)', 'i'),
   // "until the team has spoken with you", "after someone from our team has called you"
