@@ -327,7 +327,8 @@ const TAGALOG_WORDS = ['hindi', 'ng', 'po', 'naman', 'talaga', 'yung', 'ba', 'it
 const BISAYA_WORDS = ['nako', 'nimo', 'kaayo', 'unsa', 'asa', 'ngano', 'nganong', 'karon', 'karong', 'ganina', 'naa', 'diri',
   'didto', 'ug', 'og', 'pud', 'sad', 'gyud', 'jud', 'dili', 'akong', 'imong', 'iyang', 'buhaton', 'nahitabo', 'kabalo', 'mao',
   'kini', 'kana', 'unya', 'ganahan', 'sunod', 'tabang', 'nasweldohan', 'koy', 'niya', 'ani', 'lagi', 'bitaw', 'lisod',
-  'nasuko', 'nakareply', 'gibadlong', 'giingnan', 'bayran', 'motrabaho', 'ra', 'nakong', 'kaha', 'ingon', 'atong', 'ato'];
+  'nasuko', 'nakareply', 'gibadlong', 'giingnan', 'bayran', 'motrabaho', 'ra', 'nakong', 'kaha', 'ingon', 'atong', 'ato',
+  'walay', 'sapayan', 'nalipay', 'naay', 'laing', 'pangutana', 'sultihi', 'nakatabang', 'tabangan', 'unsaon', 'pila', 'diay', 'nigana'];
 const ENGLISH_WORDS = ['the', 'i', 'my', 'is', 'are', 'you', 'to', 'and', 'of', 'what', 'how', 'can', 'please', 'have', 'not',
   'it', 'for', 'with', 'on', 'this', 'that', 'me', 'do', 'does', 'will', 'any', 'tips', 'update', 'about', 'he', 'she', 'was',
   'hi', 'hello', 'good', 'morning', 'thanks', 'thank'];

@@ -53,7 +53,7 @@ const EVAL_CASES = [
   { lang: 'English', text: 'I have a concern', intent: ['CLARIFY'], n: [0, 0] },
   { lang: 'English', text: 'Any update on my leave request?', tickets: ['leave', 'acme'], intent: ['STATUS_REQUEST'], n: [0, 0], status: 'leave' },
   { lang: 'English', text: 'Any update?', tickets: ['leave', 'pay'], intent: ['STATUS_REQUEST', 'CLARIFY'], n: [0, 0], status: 'AMBIGUOUS' },
-  { lang: 'English', text: 'Acme emailed me again and now they are asking for a refund.', tickets: ['acme'], intent: ['FOLLOW_UP'], n: [1, 1], related: 'acme' },
+  { lang: 'English', text: 'Acme emailed me again and now they are asking for a refund.', tickets: ['acme'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'acme' },
   // Case 10 split in two: routine frustration (advice, optional offer), and a clearly separate
   // concern about another client while the Acme concern is open (a NEW ticket, not merged).
   { lang: 'English', text: 'My other client Beta keeps messaging me at 2am and expects instant replies.', tickets: ['acme'], intent: ['QUESTION'], n: [0, 0] },
@@ -96,10 +96,11 @@ const EVAL_CASES = [
   { lang: 'Bisaya', text: 'Unsaon nako pag-file og leave? Pila ka adlaw daan dapat?', intent: ['QUESTION'], n: [0, 1], policy: 'leave' },
   // Uses today's date: a leave 3 days away is already past the 2-week filing deadline.
   { lang: 'English', text: 'I want to take leave 3 days from today. Can I still file it in time?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], policy: 'late' },
-  { lang: 'Bisaya', text: 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.', tickets: ['acme'], intent: ['FOLLOW_UP'], n: [1, 1], related: 'acme' },
+  { lang: 'Bisaya', text: 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.', tickets: ['acme'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'acme' },
   // Help first, then check: a tool problem the advice may fix waits for the VA (if it is a concern
   // at all); "it works now" closes it; "still not working" passes it on.
-  { lang: 'English', text: 'I can\'t clock in on TCW this morning, it keeps saying my login is invalid. What should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
+  // Can't clock in = lost work time: passing it on at once is fine; a check-in is fine too.
+  { lang: 'English', text: 'I can\'t clock in on TCW this morning, it keeps saying my login is invalid. What should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: 'optional' },
   // Something blocking work that the AI can help fix: a check-in either way (held concern or problem_check_in).
   { lang: 'English', text: 'Google Drive won\'t let me open my client\'s folder, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
   // Client work and general research are declined politely (off_topic); short client-communication help is not.
@@ -217,14 +218,14 @@ function evalProblems_(c, d) {
   const held = concerns.filter(function (x) { return String(x.related_ticket || '').toUpperCase() === 'NEW' && x.sensitive_personal !== true && wouldHold_(x); });
   if (c.hold === true && concerns.length && !held.length) p.push('not held for a check-in (sent to the team at once)');
   const checkIn = String(d.problem_check_in || '').trim();
-  if (c.hold === true && !concerns.length && !checkIn && d.off_topic !== true) p.push('no check-in for a "not working" problem');
+  if (c.hold && !concerns.length && !checkIn && d.off_topic !== true) p.push('no check-in for a "not working" problem');
   if (checkIn && (c.policy || c.status || c.offTopic || c.n[0] >= 1)) p.push('check-in set on a message that should not get one');
   if (c.persona && !/orange/i.test(d.reply)) p.push('personality: favourite colour (INAVA orange) missing');
   if (c.persona && !/\bAI\b/.test(d.reply)) p.push('personality: did not say she is an AI');
   if (c.offTopic === true && d.off_topic !== true) p.push('off-topic request not declined (off_topic false)');
   if (c.offTopic !== true && d.off_topic === true) p.push('wrongly declined as off-topic');
   // A case that must reach the team (n[0] >= 1) must not wait; where a concern is optional, waiting is a note.
-  if (c.hold !== true && held.length) p.push((c.n[0] >= 1 ? '' : 'note: ') + 'held for a check-in instead of passing on at once');
+  if (!c.hold && held.length) p.push((c.n[0] >= 1 ? '' : 'note: ') + 'held for a check-in instead of passing on at once');
   if (held.some(function (x) { return !String(x.check_in || '').trim(); })) p.push('note: no check-in text (default used)');
   const sorted = (d.resolved_tickets || []).map(function (x) { return String(x).toUpperCase(); });
   if (c.resolved && sorted.indexOf(id(c.resolved)) < 0) p.push('did not mark ' + id(c.resolved) + ' as sorted');

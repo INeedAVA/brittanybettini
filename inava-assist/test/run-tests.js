@@ -1768,6 +1768,16 @@ test('monthly summary: last month\'s check-ins, off-topic requests and AI cost, 
   assert.strictEqual(env.sent.chat.length, 1, 'nothing anywhere else');
 });
 
+test('round 10: "the folder is shared with your account" is advice, not a handoff claim; Bisaya thanks reply is Bisaya', () => {
+  const env = setupEnv();
+  const clean = (t) => env.ctx.cleanReply_(t);
+  assert.strictEqual(clean('- Ask your client to confirm the folder is shared with your INAVA email address.'),
+    '- Ask your client to confirm the folder is shared with your INAVA email address.');
+  assert.strictEqual(clean('Okay. This has been shared with HR.'), 'Okay.');
+  assert.strictEqual(clean('Okay. It was sent to the team.'), 'Okay.');
+  assert.match(env.ctx.replyLanguage_('Walay sapayan, Eval! Nalipay ko nga nakatabang ko. Kung naay laing pangutana bahin sa trabaho, sultihi lang ko.'), /^Bisaya/);
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));

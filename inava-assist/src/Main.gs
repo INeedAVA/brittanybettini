@@ -259,7 +259,9 @@ const HANDOFF_CLAIMS = [
   // "I've added this to your earlier concern", "I've noted it for the team", "I've logged your request"
   new RegExp(ME + '(?:not(?:e|ed|ing)|add(?:ed|ing)?|log(?:ged|ging)?|record(?:ed|ing)?|document(?:ed|ing)?|updat(?:e|ed|ing)|includ(?:e|ed|ing)|attach(?:ed|ing)?|put|creat(?:e|ed|ing)|open(?:ed|ing)?|sav(?:e|ed|ing)|made a note|mak(?:e|ing) a note|kept a note|submit(?:ted|ting)?|fil(?:e|ed|ing))\\b[^.!?]*\\b' + CONCERN_OBJECT, 'i'),
   // "This has been passed to ...", "It's been added to your concern", "It's now with the team"
-  /\b(?:has|have|was|were|is|are)\s+(?:already\s+|now\s+)?(?:been\s+)?(?:passed|forwarded|escalated|flagged|shared|sent|reported|raised|referred|noted|logged|added|recorded|updated)\s+(?:on|along|to|with|for|in)\b/i,
+  /\b(?:has|have|was|were|is|are)\s+(?:already\s+|now\s+)?(?:been\s+)?(?:passed|forwarded|escalated|flagged|reported|raised|referred|noted|logged|added|recorded|updated)\s+(?:on|along|to|with|for|in)\b/i,
+  // "...has been shared with HR" / "sent to the team" (but "the folder is shared with your account" is advice)
+  new RegExp('\\b(?:has|have|was|were|is|are)\\s+(?:already\\s+|now\\s+)?(?:been\\s+)?(?:shared|sent)\\s+(?:on\\b|along\\b|(?:to|with)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS + ')', 'i'),
   new RegExp('\\b(?:is|are)\\s+(?:now\\s+)?(?:with|in the hands of)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS, 'i'),
   // "Ms. Cynthia will get back to you", "the team will look at it with you", "so someone on the team can check in with you"
   new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:will|\'ll|is going to|are going to)\\s+(?:also\\s+|then\\s+)?(?:get back|contact|reach out|follow up|look into|look at|look over|check in|check on|review|call you|message you|be in touch|talk|speak|discuss|go over|handle|take care|sort|resolve|fix|decide|approve|meet)', 'i'),
