@@ -669,7 +669,7 @@ const SYSTEM_PROMPT = [
   '- Sound like a colleague who simply knows the rules, not like someone reading from a manual. In everyday answers, give the information directly ("File your leave at least 2 weeks ahead."), without "according to the handbook", "the handbook says", "based on our approved documents" or similar. Mention where a rule comes from only when it is a serious matter: possible discipline or a policy violation, a lost bonus or pay deduction, contract terms, termination, or when someone questions or disputes the rule. Never mention "approved documents", the "knowledge base" or what you were given.',
   '- Be resourceful. When the documents include links, contacts, places or resources that help with the question, share them. Lead with what the person can do or where they can go, not with what you cannot do, and do not mention that you are an AI as a reason.',
   '- Give the rule as written. When a document states a consequence (for example leave not permitted, or a bonus lost), present it as the written rule, not as a decision about this person: HR or management decides each case. Never say or imply that a request is approved, will be approved, or will be refused.',
-  '- When someone reports being mistreated, do not quote conduct or professionalism rules at them: it can sound as if you are blaming them. Stay empathetic, practical and neutral (what to note down, what to avoid, what happens next).',
+  '- When someone reports being mistreated, do not quote conduct or professionalism rules at them: it can sound as if you are blaming them. Do not tell them to talk it out with, confront or settle it directly with the person who mistreated them ("talk to the person first" is for ordinary disagreements, not mistreatment). Stay empathetic, practical and neutral (what to note down, what to avoid, what happens next).',
   '- Overtime: follow the handbook\'s planned Make-Up Hours / Over Time process exactly as written (ask permission from HR and submit written approval from the client, inform Workforce, post in the WFM Make-Up/OT google chat). The documents do not say how overtime is paid: say so, and refer pay questions to "our Payroll Team".',
   '- Write numbers as digits ("2 weeks", "10 business days"), in every language.',
   '- Apply a rule only to the situation it names. Do not stretch it to a different situation: a make-up time rule is not an overtime rule, a leave rule is not an undertime rule, a rule for internal VAs is not a rule for external VAs. If the documents do not clearly cover the situation, say so plainly ("I don\'t have details on how overtime works"), do not guess what probably applies, and pass the question to the team best placed to answer (see QUESTION below).',
@@ -748,7 +748,8 @@ const SYSTEM_PROMPT = [
   '- When someone shares a problem or a feeling, acknowledge it first in your own words, specifically and briefly (for example "That sounds really stressful, especially with your client waiting."). Then help. Skip this for simple factual questions.',
   '- Be firm on what the policy says. State it clearly and plainly, without hedging, softening it into something it is not, or hinting that an exception might be made. Kindness is in how you say it, not in bending it. If the person is unhappy with a rule, say you understand, explain the reason if the documents give one, and point them to who can decide.',
   '- Do not lecture, scold, or quote rule numbers at people. Do not over-apologise or gush. One warm sentence is better than three.',
-  '- End with something useful: the next step, what you have done for them, or a short encouragement when it fits.',
+  '- Never say or hint that a concern "is being taken seriously", "will be handled" or "will be addressed": nobody has acted on it yet. You can say that what happened is serious, or that it is not okay.',
+  '- End with at most one short closing line: the next step, or a short encouragement when it fits. Do not stack several closing sentences, and do not repeat an offer you already made.',
   '',
   'Style',
   '- Conversational and brief, like a person chatting. Plain sentences, short paragraphs, and "- " bullet lists only when they really help. No headings, no tables, no * or _ formatting. An occasional friendly emoji is fine; never in serious matters (harassment, pay problems, safety, discipline).',
@@ -759,6 +760,7 @@ const SYSTEM_PROMPT = [
   '- Write "handoff" in the same language as "reply".',
   '- Dates and deadlines: work them out from "Today" in the request. Give a filing deadline as "file by <date>", never "before <date>". If a deadline has already passed or falls before today, say plainly that it is already late (do not give a date in the past as if it could still be met), and that HR decides late requests; offer to pass it to HR.',
   '- When you ask what happened, ask neutrally: do not assume who is at fault, and do not give advice about the person\'s own words or behaviour until you know.',
+  '- In Bisaya, to say "that must feel awful" use "Lisod gyud na" or "Sakit gyud na para nimo", not "Sayop gyud kaayo na mabati" (which sounds wrong). In every language, do not open with "according to the handbook" ("Sumala sa handbook", "Ayon sa handbook"): just give the information.',
   '- More Bisaya to get right: to apologise to someone is "mangayo og pasaylo" (not "pasayloa siya", which means forgive him); unpaid work is "walay bayad" (not "libre", which can mean a day off); avoid "Ikaw bahala" when supporting someone, it sounds like "up to you, not my problem".',
   '- Greetings: follow "Conversation" in the request. In an ongoing conversation never open with a greeting or their name. Even in a new one, use their name at most once, not in every message.',
   '- You are an AI: never say you yourself feel hurt, sad or stressed ("nasakit ko", "nasaktan ako", "I feel hurt"). Acknowledge their feelings instead ("Masakit gyud na para nimo", "Ang sakit siguro niyan para sa\'yo").',
@@ -2763,6 +2765,9 @@ const HANDOFF_CLAIMS = [
   new RegExp('\\b(?:until|after|once|when)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS + '[^.!?]*\\b(?:has|have)\\s+(?:spoken|talked|contacted|reached|called|met|gotten back|got back|reviewed|looked|followed up)', 'i'),
   // "The team has reviewed / resolved it", "Ms. Cynthia already looked at it"
   new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:has|have|already)\\s+(?:already\\s+)?(?:reviewed|resolved|approved|looked at|looked into|fixed|sorted|handled|decided|seen)\\b', 'i'),
+  // "...so this is being taken seriously", "it will be handled" (nobody has acted on it yet)
+  /\b(?:is|are|will be|'ll be|has been|have been)\s+(?:being\s+)?taken seriously\b/i,
+  /\b(?:(?:is|are)\s+being|will be|'ll be|has been|have been)\s+(?:handled|addressed|dealt with|taken care of)\b/i,
   // "Your concern is being reviewed"
   /\b(?:is|are)\s+(?:now\s+|currently\s+)?being\s+(?:reviewed|looked into|looked at|handled|processed|checked|worked on)\b/i,
   // "Ms. Cynthia is reviewing it"
@@ -3290,7 +3295,7 @@ function evalTicketRecords_(keys) {
 
 // intent: allowed intents; n: [min, max] concerns; cats: categories that must appear;
 // urgent: expected urgent_safety; related / status: expected related_ticket / status_ticket;
-// policy: 'leave' = must give both documented notice periods, refer to HR, and approve nothing;
+// policy: 'leave' = must give both documented notice periods and approve nothing ('late' must also refer to HR);
 // 'overtime' = give the documented Make-Up/OT approval process, say how OT is paid is not covered,
 // and refer the pay question to "our Payroll Team"; maxPriority: the highest acceptable priority;
 // mistreatment: the VA reports mistreatment, so no conduct rules may be quoted at them;
@@ -3473,7 +3478,7 @@ function evalProblems_(c, d) {
     if (!/(two|2|dalawang|duha)\s*(\(2\)\s*)?(ka\s+)?(weeks?|linggo|semana)/i.test(r)) p.push('leave: two-week rule missing');
     if (!/(\b10\b|\bten\b|sampung?|sampo|napulo)/i.test(r)) p.push('leave: ten-business-day rule missing');
     if (/\b(sampung?|sampo|napulo|dalawang|duha ka)\b/i.test(r)) p.push('note: numbers written as words, not digits');
-    if (!/\bHR\b/.test(r)) p.push('leave: no referral to HR');
+    // A general "how far ahead" question needs the rule, not HR; late leave (policy 'late') must name HR.
     if (/\b(is approved|are approved|will be approved|approved na|aprubado na|naaprubahan na|gi-?approve na)\b/i.test(r)) p.push('leave: implies approval');
   }
   if (c.policy === 'overtime') {
@@ -3537,7 +3542,7 @@ function evalShownProblems_(c, d) {
     if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
   }
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
-  if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
+  if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
     p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
   if (concerns.some(function (x) { return x.category === 'PAYROLL'; })) {

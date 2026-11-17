@@ -37,7 +37,7 @@ function evalTicketRecords_(keys) {
 
 // intent: allowed intents; n: [min, max] concerns; cats: categories that must appear;
 // urgent: expected urgent_safety; related / status: expected related_ticket / status_ticket;
-// policy: 'leave' = must give both documented notice periods, refer to HR, and approve nothing;
+// policy: 'leave' = must give both documented notice periods and approve nothing ('late' must also refer to HR);
 // 'overtime' = give the documented Make-Up/OT approval process, say how OT is paid is not covered,
 // and refer the pay question to "our Payroll Team"; maxPriority: the highest acceptable priority;
 // mistreatment: the VA reports mistreatment, so no conduct rules may be quoted at them;
@@ -220,7 +220,7 @@ function evalProblems_(c, d) {
     if (!/(two|2|dalawang|duha)\s*(\(2\)\s*)?(ka\s+)?(weeks?|linggo|semana)/i.test(r)) p.push('leave: two-week rule missing');
     if (!/(\b10\b|\bten\b|sampung?|sampo|napulo)/i.test(r)) p.push('leave: ten-business-day rule missing');
     if (/\b(sampung?|sampo|napulo|dalawang|duha ka)\b/i.test(r)) p.push('note: numbers written as words, not digits');
-    if (!/\bHR\b/.test(r)) p.push('leave: no referral to HR');
+    // A general "how far ahead" question needs the rule, not HR; late leave (policy 'late') must name HR.
     if (/\b(is approved|are approved|will be approved|approved na|aprubado na|naaprubahan na|gi-?approve na)\b/i.test(r)) p.push('leave: implies approval');
   }
   if (c.policy === 'overtime') {
@@ -284,7 +284,7 @@ function evalShownProblems_(c, d) {
     if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
   }
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
-  if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
+  if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
     p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
   if (concerns.some(function (x) { return x.category === 'PAYROLL'; })) {

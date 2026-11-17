@@ -929,7 +929,7 @@ test('live language test: checks each case, writes results, never posts or creat
   assert.match(statusRow[13], /^It's with Verge from our HR team \(passed on 20 Oct\)\. There's no update recorded from them yet\.$/);
   assert.strictEqual(statusRow[10], 'PASS');
   // The leave policy case is checked for both notice periods and an HR referral.
-  assert.match(rows.find((r) => r[3] === 'How many days ahead do I need to request leave?')[11], /two-week rule missing.*ten-business-day rule missing.*no referral to HR/);
+  assert.match(rows.find((r) => r[3] === 'How many days ahead do I need to request leave?')[11], /two-week rule missing.*ten-business-day rule missing/);
   assert.strictEqual(ticketRows(env).length, 0);
   assert.strictEqual(env.sent.chat.length, 0);
 
@@ -1528,6 +1528,16 @@ const toolConcern = (o) => concern(Object.assign({ category: 'OPERATIONS', prior
   can_resolve_here: true, offer: 'Did that help? If not, I can pass it to Mabelle from our Operations team.',
   check_in: 'Just checking in: is your Hubstaff tracking again? If not, I can pass it to Mabelle from our Operations team.',
   handoff: 'I\'ve passed this to Mabelle from our Operations team.' }, o || {}));
+
+test('round 7: no "taken seriously" promises; "how it is handled" advice stays', () => {
+  const env = setupEnv();
+  const clean = (t) => env.ctx.cleanReply_(t);
+  assert.strictEqual(clean('A threat like that is serious. Threats are covered by our zero-tolerance policy, so this is being taken seriously. Write down what was said.'),
+    'A threat like that is serious. Write down what was said.');
+  assert.strictEqual(clean('I\'m sorry. It will be handled soon. Keep a copy of the messages.'), 'I\'m sorry. Keep a copy of the messages.');
+  assert.strictEqual(clean('Here is how overtime is handled: ask HR first.'), 'Here is how overtime is handled: ask HR first.');
+  assert.strictEqual(clean('That is not okay, and it is serious.'), 'That is not okay, and it is serious.');
+});
 
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());

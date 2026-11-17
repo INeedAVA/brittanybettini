@@ -237,6 +237,9 @@ const HANDOFF_CLAIMS = [
   new RegExp('\\b(?:until|after|once|when)\\s+(?:the\\s+|our\\s+)?' + TEAM_WORDS + '[^.!?]*\\b(?:has|have)\\s+(?:spoken|talked|contacted|reached|called|met|gotten back|got back|reviewed|looked|followed up)', 'i'),
   // "The team has reviewed / resolved it", "Ms. Cynthia already looked at it"
   new RegExp('\\b' + TEAM_WORDS + '[^.!?]*\\b(?:has|have|already)\\s+(?:already\\s+)?(?:reviewed|resolved|approved|looked at|looked into|fixed|sorted|handled|decided|seen)\\b', 'i'),
+  // "...so this is being taken seriously", "it will be handled" (nobody has acted on it yet)
+  /\b(?:is|are|will be|'ll be|has been|have been)\s+(?:being\s+)?taken seriously\b/i,
+  /\b(?:(?:is|are)\s+being|will be|'ll be|has been|have been)\s+(?:handled|addressed|dealt with|taken care of)\b/i,
   // "Your concern is being reviewed"
   /\b(?:is|are)\s+(?:now\s+|currently\s+)?being\s+(?:reviewed|looked into|looked at|handled|processed|checked|worked on)\b/i,
   // "Ms. Cynthia is reviewing it"
