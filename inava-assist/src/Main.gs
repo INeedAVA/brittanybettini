@@ -206,6 +206,7 @@ function handleMessage_(ev, messageKey) {
     link: ev.isDm ? '' : conversationLink_(ev),
     thread: ev.message && ev.message.thread ? String(ev.message.thread.name || '') : '',
     message: safeText,
+    reply: String(decision.reply || '').replace(HANDOFF_MARKER, ''),
     messageKey: messageKey,
   });
   // They said something is sorted: close it (or tell the team). Never one this message just passed on.

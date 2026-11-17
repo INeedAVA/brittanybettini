@@ -1556,7 +1556,7 @@ function defaultHandoff_(category, isFollowUp, lang) {
 function escalateConcerns_(concerns, user, source) {
   const valid = (concerns || []).filter(function (c) { return c && CATEGORIES.hasOwnProperty(c.category); });
   if (!valid.length) return [];
-  const lang = statusLanguage_(source.message);
+  const lang = statusLanguage_(source.message, source.reply);
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -2151,8 +2151,10 @@ const STATUS_TEXT = {
 };
 
 /** 'ceb', 'tl' or 'en' for a status answer, from the person's message (a tie stays English). */
-function statusLanguage_(message) {
-  const lang = replyLanguage_(message || '');
+function statusLanguage_(message, replyText) {
+  let lang = replyLanguage_(message || '');
+  // Too mixed to tell (Tagalog and Bisaya words both): go by the language the AI answered in.
+  if (/^the same Filipino/.test(lang) && replyText) lang = replyLanguage_(replyText);
   if (/^Bisaya/.test(lang)) return 'ceb';
   if (/^Tagalog/.test(lang)) return 'tl';
   return 'en';
@@ -3062,6 +3064,7 @@ function handleMessage_(ev, messageKey) {
     link: ev.isDm ? '' : conversationLink_(ev),
     thread: ev.message && ev.message.thread ? String(ev.message.thread.name || '') : '',
     message: safeText,
+    reply: String(decision.reply || '').replace(HANDOFF_MARKER, ''),
     messageKey: messageKey,
   });
   // They said something is sorted: close it (or tell the team). Never one this message just passed on.
