@@ -1572,7 +1572,15 @@ test('monthly reminder: first Wednesday only, only spaces marked Monthly Reminde
   spaces.push(['spaces/announce', 'Announcements', 'YES', 'VA', '', toSerial(new Date()), '', '', '', 'YES']);
   spaces.push(['spaces/internalteam', 'I Need A VA Internal Team', 'YES', 'VA', '', toSerial(new Date()), '', '', '', 'YES']);
   spaces.push(['spaces/notyet', 'Not approved', 'NO', 'VA', '', toSerial(new Date()), '', '', '', 'YES']);
-  env.setClaude(() => ({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '💬 Quote' }] } }));
+  let openers = 0;
+  env.setClaude((req) => {
+    if (/once-a-month post/.test(req.body.system)) {
+      openers++;
+      assert.match(req.body.messages[0].content, /Write the opener for [A-Z][a-z]+ \d{4}\./);
+      return { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Happy December, team! Your Wi-Fi has officially entered its festive, unpredictable era. 🎄' }] } };
+    }
+    return { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '💬 Quote' }] } };
+  });
   const reminders = () => env.sent.chat.filter((c) => c.body && c.body.text && /Questions about INAVA policies/.test(c.body.text));
   env.ctx.__weekday = '3';
   env.ctx.__monthDay = '9'; // second Wednesday
@@ -1582,13 +1590,18 @@ test('monthly reminder: first Wednesday only, only spaces marked Monthly Reminde
   env.ctx.dailyMorning();
   const sent = reminders();
   assert.deepStrictEqual(sent.map((c) => c.url.match(/spaces\/[^/]+/)[0]).sort(), ['spaces/announce', 'spaces/internalteam']);
-  assert.match(sent[0].body.text, /^Hi team! 👋 Questions about INAVA policies or a concern at work\? Just message me, Ask INAVA, anytime\. DM me for anything private\.$/);
+  assert.strictEqual(sent[0].body.text, 'Happy December, team! Your Wi-Fi has officially entered its festive, unpredictable era. 🎄\n\n' +
+    'Questions about INAVA policies or a concern at work? Just message me, Ask INAVA, anytime. DM me for anything private.');
+  assert.strictEqual(sent[1].body.text, sent[0].body.text, 'every space gets the same text');
+  assert.strictEqual(openers, 1, 'written once for the month');
+  assert.match(env.props.MONTHLY_REMINDER_HISTORY, /Wi-Fi/);
   // The same month's reminder uses a fixed message ID, so a re-run never posts it twice.
   assert.ok(sent.every((c) => /messageId=client-reminder-/.test(c.url)));
   const ids = sent.map((c) => c.url.match(/messageId=([^&]+)/)[1]);
   env.ctx.postMonthlyReminder();
-  // Chat refuses a second message with the same ID, so nothing new appears.
+  // Chat refuses a second message with the same ID, so nothing new appears, and no new opener is written.
   assert.strictEqual(reminders().length, 2);
+  assert.strictEqual(openers, 1);
   assert.strictEqual(new Set(ids).size, 2);
   // Thursday: nothing.
   env.ctx.__weekday = '4';
@@ -1598,6 +1611,15 @@ test('monthly reminder: first Wednesday only, only spaces marked Monthly Reminde
   env.props.MONTHLY_REMINDER_TEXT = 'off';
   env.ctx.postMonthlyReminder();
   assert.strictEqual(reminders().length, n);
+  // The AI is unavailable: the standard reminder is posted instead of nothing.
+  delete env.props.MONTHLY_REMINDER_TEXT;
+  Object.keys(env.props).filter((k) => /^MONTHLY_REMINDER_\d/.test(k)).forEach((k) => delete env.props[k]);
+  env.setClaude(() => ({ code: 529, body: { error: { message: 'overloaded' } } }));
+  assert.strictEqual(env.ctx.monthlyReminderText_('January 2027', true),
+    'Hi team! 👋 Questions about INAVA policies or a concern at work? Just message me, Ask INAVA, anytime. DM me for anything private.');
+  // Your own text replaces the AI opener.
+  env.props.MONTHLY_REMINDER_TEXT = 'Custom note';
+  assert.strictEqual(env.ctx.monthlyReminderText_('January 2027', true), 'Custom note');
 });
 
 test('off-topic: declined, no ticket; the team inbox gets one heads-up at the 5th request of the day', () => {

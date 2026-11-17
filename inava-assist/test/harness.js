@@ -176,6 +176,8 @@ function createEnv() {
         if (fmt === 'u') return ctx.__weekday || '3';
         if (fmt === 'd') return ctx.__monthDay || String(d.getUTCDate());
         if (fmt === 'yyyy-MM') return iso.slice(0, 7);
+        if (fmt === 'MMMM yyyy') return ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+          'October', 'November', 'December'][d.getUTCMonth()] + ' ' + d.getUTCFullYear();
         if (fmt === 'yyyy-MM-dd') return iso.slice(0, 10);
         return iso;
       },

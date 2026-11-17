@@ -161,20 +161,93 @@ function saveBriefingHistory_(history, date, text) {
   setProp_('BRIEFING_HISTORY', JSON.stringify(h));
 }
 
+// The part of the monthly reminder that never changes (the AI writes only the opener above it).
+const MONTHLY_REMINDER_LINE = 'Questions about INAVA policies or a concern at work? Just message me, Ask INAVA, anytime. DM me for anything private.';
+const MONTHLY_REMINDER_FALLBACK = 'Hi team! 👋 ' + MONTHLY_REMINDER_LINE;
+const MONTHLY_HISTORY_MONTHS = 12;
+
+const MONTHLY_PROMPT = [
+  'You write the opener of a once-a-month post by Ask INAVA, the AI assistant of I Need A VA (INAVA), in the Google Chat group chats of INAVA\'s virtual assistants (VAs). VAs are remote, mostly Filipino, supporting US small businesses. A fixed reminder line about asking Ask INAVA questions is added under your opener, so do not write a reminder or a call to action yourself.',
+  '',
+  'Write ONE opener of 1 or 2 short sentences, at most 35 words, in English. Start it with "Happy <Month>, team!" or "Did you know" or another fresh hook, and vary the hook from the recent openers below.',
+  '- Witty and genuinely funny in a light, dry, friendly way, like a clever coworker. Not cringe: no forced puns stacked together, no "hustle", "slay", "vibes", "grind" or corporate buzzwords, no ALL CAPS, at most 2 emojis, at most one exclamation mark.',
+  '- Good material: something true and widely known about the month (seasons, well-known holidays in the Philippines or the US, the "ber" months, rainy season, New Year), relatable remote-work moments (muted mics, 47 browser tabs, coffee, the Wi-Fi betraying you), or the month as a fresh start.',
+  '- A "Did you know" must be a fact you are certain is true and widely known. Never invent facts, numbers, dates or statistics. Nothing about INAVA policies, pay, leave, bonuses or rules.',
+  '- No politics, religion beyond a simple holiday greeting, tragedies, weather warnings, or anything that could make someone feel left out or teased.',
+  '- Plain text only, no markdown, no quotation marks around it.',
+].join('\n');
+
+/** The month's reminder text: your own MONTHLY_REMINDER_TEXT, or the AI opener + MONTHLY_REMINDER_LINE. */
+function monthlyReminderText_(monthName, save) {
+  const own = String(getProp_('MONTHLY_REMINDER_TEXT') || '').trim();
+  if (own) return own;
+  let history = [];
+  try { history = JSON.parse(getProp_('MONTHLY_REMINDER_HISTORY') || '[]'); } catch (e) { history = []; }
+  let opener = '';
+  try {
+    opener = writeMonthlyOpener_(monthName, history);
+  } catch (e) {
+    console.warn('Monthly opener could not be written (' + e + '); using the standard reminder.');
+    return MONTHLY_REMINDER_FALLBACK;
+  }
+  if (save) {
+    setProp_('MONTHLY_REMINDER_HISTORY', JSON.stringify(history.concat([{ month: monthName, text: opener }]).slice(-MONTHLY_HISTORY_MONTHS)));
+  }
+  return opener + '\n\n' + MONTHLY_REMINDER_LINE;
+}
+
+function writeMonthlyOpener_(monthName, history) {
+  const recent = history.length ? history.map(function (h) { return '- ' + h.month + ': ' + h.text; }).join('\n') : '(none yet)';
+  const res = postToClaude_(getProp_('ANTHROPIC_API_KEY'), {
+    model: getProp_('BRIEFING_MODEL') || BRIEFING_MODEL_DEFAULT,
+    max_tokens: 2000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'low' },
+    system: MONTHLY_PROMPT + '\n\nRecent openers (do not repeat their hook or joke):\n' + recent,
+    messages: [{ role: 'user', content: 'Write the opener for ' + monthName + '.' }],
+  }, false);
+  if (res.code !== 200) throw new Error(res.code + ': ' + String(res.text).slice(0, 200));
+  const msg = JSON.parse(res.text);
+  const text = (msg.content || []).filter(function (b) { return b.type === 'text'; })
+    .map(function (b) { return b.text; }).join(' ').replace(/\s+/g, ' ').replace(/^["“]|["”]$/g, '').trim();
+  if (!text || msg.stop_reason === 'refusal') throw new Error('empty or refused');
+  // A runaway answer is not posted.
+  if (text.split(' ').length > 60) throw new Error('too long');
+  return text;
+}
+
+/** Sends this month's kind of reminder to your private chat with Ask INAVA, to see the tone. Posts nothing in group chats. */
+function previewMonthlyReminder() {
+  resetMemo_();
+  const admin = findUser_(getProp_('ADMIN_EMAIL'));
+  if (!admin || !admin.dmSpace) throw new Error('Send Ask INAVA a direct message first, from ' + getProp_('ADMIN_EMAIL') + '.');
+  const text = monthlyReminderText_(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM yyyy'), false);
+  postMessage_(admin.dmSpace, '(Preview of the monthly reminder)\n\n' + text);
+  console.log('Preview sent to your private chat with Ask INAVA:\n\n' + text);
+}
+
 /**
- * Posts MONTHLY_REMINDER_TEXT in every approved space with Monthly Reminder = YES. dailyMorning
- * calls it on the first Wednesday of the month; run it by hand to post it now. Each space gets it
- * at most once a month, however often this runs.
+ * Posts the monthly reminder in every approved space with Monthly Reminder = YES. dailyMorning
+ * calls it on the first Wednesday of the month; run it by hand to post it now. The month's text is
+ * written once and kept, and each space gets it at most once a month, however often this runs.
  */
 function postMonthlyReminder() {
   resetMemo_();
   ensureColumns_(SHEETS.SPACES);
-  const text = String(getProp_('MONTHLY_REMINDER_TEXT') || '').trim();
-  if (!text || text.toLowerCase() === 'off') return;
-  const month = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
-  readTable_(SHEETS.SPACES).filter(function (r) {
+  if (String(getProp_('MONTHLY_REMINDER_TEXT') || '').trim().toLowerCase() === 'off') return;
+  const tz = Session.getScriptTimeZone();
+  const month = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+  const spaces = readTable_(SHEETS.SPACES).filter(function (r) {
     return isYes_(r['Approved']) && isYes_(r['Monthly Reminder']) && !isYes_(r['Team Inbox']);
-  }).forEach(function (r) {
+  });
+  if (!spaces.length) return;
+  // Written once per month: a re-run posts the same text (and Chat refuses the duplicate).
+  let text = getProp_('MONTHLY_REMINDER_' + month);
+  if (!text) {
+    text = monthlyReminderText_(Utilities.formatDate(new Date(), tz, 'MMMM yyyy'), true);
+    setProp_('MONTHLY_REMINDER_' + month, text);
+  }
+  spaces.forEach(function (r) {
     const space = String(r['Space ID']).trim();
     try {
       postMessage_(space, text, null, clientMessageId_('reminder-' + month + '-' + shortHash_(space)));

@@ -40,9 +40,10 @@ const DEFAULTS = {
   CHECK_IN_MINUTES: '15',
   // Hours after that check-in with no reply before the waiting concern is closed quietly.
   CHECK_IN_CLOSE_HOURS: '2',
-  // Posted on the first Wednesday of each month (by dailyMorning) in every approved space with
-  // Monthly Reminder = YES in the Spaces tab. Set to 'off' to stop it.
-  MONTHLY_REMINDER_TEXT: 'Hi team! 👋 Questions about INAVA policies or a concern at work? Just message me, Ask INAVA, anytime. DM me for anything private.',
+  // The first Wednesday of each month (by dailyMorning), every approved space with Monthly
+  // Reminder = YES gets a fresh, light opener written by the AI plus the reminder line below.
+  // Set MONTHLY_REMINDER_TEXT to your own text to post exactly that instead, or 'off' to stop it.
+  MONTHLY_REMINDER_TEXT: '',
   // After this many requests in one day that are not about INAVA work (client tasks, research,
   // general knowledge), the team inbox gets one heads-up card about that person. 'off' to stop.
   OFF_TOPIC_ALERT_AFTER: '5',
