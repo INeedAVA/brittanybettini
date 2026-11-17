@@ -1524,9 +1524,9 @@ function setCell(env, id, col, value) {
   data.find((r) => r[0] === id)[c] = value;
 }
 const minutesAgo = (m) => toSerial(new Date(Date.now() - m * 60000));
-const toolConcern = (o) => concern(Object.assign({ category: 'OPERATIONS', priority: 'NORMAL', concern_text: 'My Hubstaff timer will not start.',
+const toolConcern = (o) => concern(Object.assign({ category: 'OPERATIONS', priority: 'NORMAL', concern_text: 'I cannot clock in on TCW.',
   can_resolve_here: true, offer: 'Did that help? If not, I can pass it to Mabelle from our Operations team.',
-  check_in: 'Just checking in: is your Hubstaff tracking again? If not, I can pass it to Mabelle from our Operations team.',
+  check_in: 'Just checking in: can you clock in on TCW now? If not, I can pass it to Mabelle from our Operations team.',
   handoff: 'I\'ve passed this to Mabelle from our Operations team.' }, o || {}));
 
 test('round 7: no "taken seriously" promises; "how it is handled" advice stays', () => {
@@ -1552,14 +1552,14 @@ test('round 8: Bisaya and Tagalog "just tell me and I\'ll pass it on" offers sta
 
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
-  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try logging out of Hubstaff and back in.\n\n[HANDOFF]', concerns: [toolConcern()] }));
-  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start')));
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW')));
   const row = ticketRows(env)[0];
   assert.strictEqual(row.Status, 'Waiting on VA');
   assert.strictEqual(row.Delivery, 'Held');
   assert.match(row['Check-in Message'], /Just checking in/);
   assert.strictEqual(inboxPosts(env).length, 0, 'nothing posted to the team chat');
-  assert.match(r, /logging out[\s\S]*Did that help\? If not, I can pass it to Mabelle/);
+  assert.match(r, /resetting your TCW password[\s\S]*Did that help\? If not, I can pass it to Mabelle/);
   assert.doesNotMatch(r, /passed this|couldn't reach/);
   // The team's daily check-in does not list it (the team never had it).
   env.sent.chat.length = 0;
@@ -1568,7 +1568,7 @@ test('help first: a concern the advice may fix waits for the VA, nothing reaches
   // Without an offer from the AI, a safe default question is used.
   const env2 = withInbox(setupEnv());
   claudeReturns(env2, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern({ offer: 'I\'ve passed this on.' })] }));
-  const r2 = replyOf(env2.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start')));
+  const r2 = replyOf(env2.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW')));
   assert.match(r2, /Did that help\? If not, just tell me and I can pass it to /);
   assert.doesNotMatch(r2, /passed this on/);
 });
@@ -1593,7 +1593,7 @@ test('help first: pay, HR, HIGH, urgent and sensitive concerns always go to the 
 test('help first: check-in after 15 quiet minutes (once), quiet close 2 hours later', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
-  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW'));
   const id = ticketRows(env)[0]['Ticket ID'];
   env.sent.chat.length = 0;
   env.ctx.checkWaitingConcerns();
@@ -1602,7 +1602,7 @@ test('help first: check-in after 15 quiet minutes (once), quiet close 2 hours la
   env.ctx.checkWaitingConcerns();
   const dms = env.sent.chat.filter((c) => c.url.indexOf('spaces/dm-u6/messages') >= 0);
   assert.strictEqual(dms.length, 1);
-  assert.match(dms[0].body.text, /Just checking in: is your Hubstaff tracking again/);
+  assert.match(dms[0].body.text, /Just checking in: can you clock in on TCW now/);
   assert.ok(ticketRows(env)[0]['Check-in Sent']);
   env.ctx.checkWaitingConcerns();
   assert.strictEqual(env.sent.chat.length, 1, 'checked in only once');
@@ -1618,7 +1618,7 @@ test('help first: check-in after 15 quiet minutes (once), quiet close 2 hours la
 test('help first: a new message from the VA restarts the 15 minutes', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
-  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW'));
   const id = ticketRows(env)[0]['Ticket ID'];
   setCell(env, id, 'Waiting Since', minutesAgo(14));
   claudeReturns(env, answer({ intent: 'QUESTION', reply: 'Sure, here is how.' }));
@@ -1632,7 +1632,7 @@ test('help first: a new message from the VA restarts the 15 minutes', () => {
 test('help first: "still not working" passes the waiting concern to the team as a new concern', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
-  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW'));
   const id = ticketRows(env)[0]['Ticket ID'];
   claudeReturns(env, answer({ intent: 'FOLLOW_UP', reply: 'Sorry it\'s still not working.\n\n[HANDOFF]',
     concerns: [toolConcern({ related_ticket: id, can_resolve_here: false, concern_text: 'Still not working, I restarted twice.' })] }));
@@ -1643,7 +1643,7 @@ test('help first: "still not working" passes the waiting concern to the team as 
   assert.strictEqual(row.Delivery, 'Delivered');
   const cards = inboxPosts(env).map(cardText);
   assert.strictEqual(cards.length, 1);
-  assert.match(cards[0], /NEW CONCERN[\s\S]*My Hubstaff timer will not start[\s\S]*They added later: Still not working/);
+  assert.match(cards[0], /NEW CONCERN[\s\S]*I cannot clock in on TCW[\s\S]*They added later: Still not working/);
   assert.match(r, /I've passed this to Mabelle from our Operations team/);
   // Once with the team, the check-in job leaves it alone.
   setCell(env, id, 'Waiting Since', minutesAgo(30));
@@ -1655,7 +1655,7 @@ test('help first: "still not working" passes the waiting concern to the team as 
 test('help first: "it works now" closes a waiting concern without telling the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
-  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW'));
   const id = ticketRows(env)[0]['Ticket ID'];
   const out = answer({ intent: 'CASUAL', reply: 'Glad it\'s working now!' });
   out.resolved_tickets = [id];
@@ -1722,7 +1722,7 @@ test('help first: "sorted" on a concern that never reached the team chat closes 
 test('help first: in a group chat the check-in goes to the same thread; status and my tickets say it is not passed on', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
-  env.ctx.onMessage(spaceEvent('va@inava.test', 'users/6', 'spaces/acme', 'My Hubstaff timer will not start'));
+  env.ctx.onMessage(spaceEvent('va@inava.test', 'users/6', 'spaces/acme', 'I cannot clock in on TCW'));
   const id = ticketRows(env)[0]['Ticket ID'];
   assert.strictEqual(ticketRows(env)[0]['Reply Thread'], 'spaces/acme/threads/abc');
   setCell(env, id, 'Waiting Since', minutesAgo(20));
@@ -1740,7 +1740,7 @@ test('help first: in a group chat the check-in goes to the same thread; status a
 test('help first: if the check-in cannot be sent, the concern goes to the team instead', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
-  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My Hubstaff timer will not start'));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW'));
   const id = ticketRows(env)[0]['Ticket ID'];
   // The VA's DM space is unknown, so a private check-in is impossible.
   env.sheet('Users').find((r) => r[0] === 'va@inava.test')[6] = '';

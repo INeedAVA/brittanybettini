@@ -723,9 +723,9 @@ const SYSTEM_PROMPT = [
   '- status_ticket: for a status question, the ID of the one concern they mean (open or recently resolved, from the list); "AMBIGUOUS" if more than one could match; "NONE" if none matches. Empty when they are not asking about status.',
   '',
   'Help first, then check',
-  '- can_resolve_here: true only when your reply gives practical steps that may fully sort the problem out without anyone on the team (for example a tool, login or tracker problem with steps to try), they have not asked for a person, and it needs no decision, approval, payment, protection or record. False for pay, leave, schedules, contracts, mistreatment, harassment, conduct, safety, anything HIGH or URGENT, anything you could not answer, and whenever they asked for someone to step in. When true, the concern is not passed on yet: the system asks them later whether it is sorted, and passes it on only if they still need help.',
+  '- can_resolve_here: true only when your reply gives practical steps that may fully sort the problem out without anyone on the team (for example a TCW (TimeClock Wizard) clock-in, login or tool problem with steps to try), they have not asked for a person, and it needs no decision, approval, payment, protection or record. False for pay, leave, schedules, contracts, mistreatment, harassment, conduct, safety, anything HIGH or URGENT, anything you could not answer, and whenever they asked for someone to step in. When true, the concern is not passed on yet: the system asks them later whether it is sorted, and passes it on only if they still need help.',
   '- offer: when can_resolve_here is true, one short question in their language asking whether that helped and offering to pass it to the team member for its category, using the name in Team members (for example "Did that help? If not, just tell me and I can pass it to Ms. Mabelle from our Operations team."). Put the [HANDOFF] marker in "reply" where it goes, and do not write a similar offer in "reply" yourself. Otherwise empty.',
-  '- check_in: when can_resolve_here is true, a short, friendly message in their language that the system sends if they go quiet, asking whether it is sorted now and offering to pass it on (for example "Just checking in: is your Hubstaff tracking again? If not, I can pass it to Ms. Mabelle from our Operations team."). No greeting. Otherwise empty.',
+  '- check_in: when can_resolve_here is true, a short, friendly message in their language that the system sends if they go quiet, asking whether it is sorted now and offering to pass it on (for example "Just checking in: can you clock in on TCW now? If not, I can pass it to Ms. Mabelle from our Operations team."). No greeting. Otherwise empty.',
   '- Concerns marked "waiting for their answer" in the request have not been passed on yet. If they say it is still not working, it did not help, or they want it passed on, that is FOLLOW_UP with related_ticket = that ID and can_resolve_here false.',
   '- resolved_tickets: the IDs of their own open concerns (from the list) that they clearly say are now sorted, fixed, or no longer needed ("okay na, gumana na", "never mind, it\'s fixed", "ok na siya, salamat"). A plain "thanks" or "okay" does not count unless it clearly says the problem is fixed. If unsure, leave it empty. When they say it is sorted, reply briefly and warmly ("Glad it\'s working now!"); never say that you closed, removed or updated anything.',
   '',
@@ -3282,7 +3282,7 @@ const EVAL_TICKETS = {
   pay: { id: 'INAVA-261021-002', category: 'PAYROLL', status: 'In Progress', open: true, raised: '21 Oct', summary: 'I have not received my pay for the Oct 15 cutoff.' },
   acme: { id: 'INAVA-261022-003', category: 'CLIENT_CARE', status: 'Awaiting Response', open: true, raised: '22 Oct', summary: 'My client Acme is unhappy with my weekly report and said it is late every time.' },
   // Waiting on the VA: Ask INAVA gave advice and has not passed it on yet.
-  tool: { id: 'INAVA-261023-004', category: 'OPERATIONS', status: WAITING_STATUS, open: true, waiting: true, raised: '23 Oct', summary: 'My Hubstaff timer will not start this morning.' },
+  tool: { id: 'INAVA-261023-004', category: 'OPERATIONS', status: WAITING_STATUS, open: true, waiting: true, raised: '23 Oct', summary: 'I cannot clock in on TCW this morning.' },
 };
 
 function evalTicketRecords_(keys) {
@@ -3357,9 +3357,9 @@ const EVAL_CASES = [
   { lang: 'Bisaya', text: 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.', tickets: ['acme'], intent: ['FOLLOW_UP'], n: [1, 1], related: 'acme' },
   // Help first, then check: a tool problem the advice may fix waits for the VA (if it is a concern
   // at all); "it works now" closes it; "still not working" passes it on.
-  { lang: 'English', text: 'My Hubstaff timer won\'t start this morning, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
-  { lang: 'Bisaya', text: 'Okay na diay, nigana na akong Hubstaff. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
-  { lang: 'English', text: 'I tried that but the Hubstaff timer still won\'t start. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
+  { lang: 'English', text: 'I can\'t clock in on TCW this morning, it keeps saying my login is invalid. What should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
+  { lang: 'Bisaya', text: 'Okay na diay, maka-clock in na ko sa TCW. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
+  { lang: 'English', text: 'I tried that but I still can\'t clock in on TCW. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
 ];
 
 function runLanguageEval() {

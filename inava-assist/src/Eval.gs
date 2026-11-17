@@ -24,7 +24,7 @@ const EVAL_TICKETS = {
   pay: { id: 'INAVA-261021-002', category: 'PAYROLL', status: 'In Progress', open: true, raised: '21 Oct', summary: 'I have not received my pay for the Oct 15 cutoff.' },
   acme: { id: 'INAVA-261022-003', category: 'CLIENT_CARE', status: 'Awaiting Response', open: true, raised: '22 Oct', summary: 'My client Acme is unhappy with my weekly report and said it is late every time.' },
   // Waiting on the VA: Ask INAVA gave advice and has not passed it on yet.
-  tool: { id: 'INAVA-261023-004', category: 'OPERATIONS', status: WAITING_STATUS, open: true, waiting: true, raised: '23 Oct', summary: 'My Hubstaff timer will not start this morning.' },
+  tool: { id: 'INAVA-261023-004', category: 'OPERATIONS', status: WAITING_STATUS, open: true, waiting: true, raised: '23 Oct', summary: 'I cannot clock in on TCW this morning.' },
 };
 
 function evalTicketRecords_(keys) {
@@ -99,9 +99,9 @@ const EVAL_CASES = [
   { lang: 'Bisaya', text: 'Ang Acme nag-email na pud nako, karon nangayo na sila og refund.', tickets: ['acme'], intent: ['FOLLOW_UP'], n: [1, 1], related: 'acme' },
   // Help first, then check: a tool problem the advice may fix waits for the VA (if it is a concern
   // at all); "it works now" closes it; "still not working" passes it on.
-  { lang: 'English', text: 'My Hubstaff timer won\'t start this morning, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
-  { lang: 'Bisaya', text: 'Okay na diay, nigana na akong Hubstaff. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
-  { lang: 'English', text: 'I tried that but the Hubstaff timer still won\'t start. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
+  { lang: 'English', text: 'I can\'t clock in on TCW this morning, it keeps saying my login is invalid. What should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
+  { lang: 'Bisaya', text: 'Okay na diay, maka-clock in na ko sa TCW. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
+  { lang: 'English', text: 'I tried that but I still can\'t clock in on TCW. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
 ];
 
 function runLanguageEval() {
