@@ -1732,6 +1732,42 @@ test('personality: Ava\'s details are in the instructions, with no jokes in seri
   assert.match(sys, /In serious matters \(pay problems, mistreatment/);
 });
 
+test('monthly summary: last month\'s check-ins, off-topic requests and AI cost, in the team inbox only, once', () => {
+  const env = withInbox(setupEnv());
+  const now = new Date();
+  const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 10, 12));
+  const thisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 12));
+  // Three waiting concerns from last month: sorted by the VA, passed on, closed after no reply.
+  claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try this.\n\n[HANDOFF]', concerns: [toolConcern()] }));
+  ['a', 'b', 'c'].forEach((x) => env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'I cannot clock in on TCW ' + x)));
+  const rows = ticketRows(env);
+  const histories = ['Resolved by VA: Vicky VA said it was sorted, so it was not passed to the team',
+    'Passed to the team: they still needed help', 'Closed automatically: no reply 2 hours after the check-in (not passed to the team)'];
+  rows.forEach((r, i) => {
+    setCell(env, r['Ticket ID'], 'History', histories[i]);
+    setCell(env, r['Ticket ID'], 'Updated', toSerial(lastMonth));
+  });
+  const audit = env.sheet('Audit Log');
+  const a = (d, email, action, detail) => audit.push([toSerial(d), email, 'VA', 'spaces/dm', action, '', detail]);
+  a(lastMonth, 'va@inava.test', 'OFF_TOPIC', '1 today');
+  a(lastMonth, 'va@inava.test', 'OFF_TOPIC', '2 today');
+  a(lastMonth, 'va2@inava.test', 'OFF_TOPIC', '1 today');
+  a(lastMonth, 'va@inava.test', 'OFF_TOPIC_ALERT', '5 today');
+  a(lastMonth, 'va@inava.test', 'ANSWERED', 'QUESTION | in 1, out 1, ~$0.0100');
+  a(lastMonth, 'va@inava.test', 'ANSWERED', 'QUESTION | ~$0.0300');
+  a(thisMonth, 'va@inava.test', 'ANSWERED', 'QUESTION | ~$9.0000');
+  env.sent.chat.length = 0;
+  env.ctx.postMonthlySummary();
+  env.ctx.postMonthlySummary();
+  const cards = inboxPosts(env).map(cardText);
+  assert.strictEqual(cards.length, 1, 'once a month');
+  assert.match(cards[0], /MONTHLY SUMMARY: [A-Z]+ \d{4}/);
+  assert.match(cards[0], /Check-ins: 1 sorted without the team \(the VA said it was fixed\), 1 passed on after the check-in, 1 closed after no reply\./);
+  assert.match(cards[0], /Off-topic requests: 3 from 2 people \(1 heads-up sent\)\./);
+  assert.match(cards[0], /AI cost: about \$0\.04 for 2 answers/);
+  assert.strictEqual(env.sent.chat.length, 1, 'nothing anywhere else');
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));
