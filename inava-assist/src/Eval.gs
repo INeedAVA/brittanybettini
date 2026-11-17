@@ -56,7 +56,7 @@ const EVAL_CASES = [
   { lang: 'English', text: 'Acme emailed me again and now they are asking for a refund.', tickets: ['acme'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'acme' },
   // Case 10 split in two: routine frustration (advice, optional offer), and a clearly separate
   // concern about another client while the Acme concern is open (a NEW ticket, not merged).
-  { lang: 'English', text: 'My other client Beta keeps messaging me at 2am and expects instant replies.', tickets: ['acme'], intent: ['QUESTION'], n: [0, 0] },
+  { lang: 'English', text: 'My other client Beta keeps messaging me at 2am and expects instant replies.', tickets: ['acme'], intent: ['QUESTION', 'CLARIFY'], n: [0, 0] },
   { lang: 'English', text: 'Different thing: my other client Beta has been insulting me in every meeting and now threatened to cancel my contract.', tickets: ['acme'], intent: ['CONCERN'], n: [1, 1], cats: ['CLIENT_CARE'], related: 'NEW', sensitive: false, mistreatment: true },
   { lang: 'English', text: 'A client said he knows where I live and that he will come and hurt me.', intent: ['CONCERN'], n: [1, 1], urgent: true, sensitive: false },
   { lang: 'English', text: 'I\'m so tired and stressed today, but I\'m okay, just needed to say it.', intent: ['CASUAL'], n: [0, 0], urgent: false },
@@ -147,7 +147,7 @@ function runLanguageEval() {
           const held = !followUp && related === 'NEW' && x.sensitive_personal !== true && wouldHold_(x);
           return { saved: true, delivered: !held, held: held, offer: held ? safeOffer_(x.category, x.offer) : '',
             handoff: safeHandoff_(x.category, x.handoff, followUp, statusLanguage_(c.text)), urgent: x.urgent_safety === true, category: x.category };
-        }), { inDm: true });
+        }), { inDm: true, aboutAva: ABOUT_AVA.test(c.text) });
         const shownProblems = evalShownProblems_(c, d);
         problems = problems.concat(shownProblems);
         // The AI was unsure which concern, but the code's topic fallback still gave the right

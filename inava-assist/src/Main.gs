@@ -218,7 +218,8 @@ function handleMessage_(ev, messageKey) {
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
     ? statusReply_(user, which || 'NONE', !ev.isDm, null, safeText) : '';
-  let reply = composeReply_(decision, status, results, { inDm: ev.isDm, ongoing: ongoing, firstName: firstName_(user.name) });
+  let reply = composeReply_(decision, status, results, { inDm: ev.isDm, ongoing: ongoing, firstName: firstName_(user.name),
+    aboutAva: ABOUT_AVA.test(safeText) });
 
   // Only cite documents this person was actually given.
   const titles = knowledge.docs.map(function (d) { return d.title; });
@@ -427,6 +428,12 @@ function stripOpeningGreeting_(text, firstName) {
   return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
+// The person asked about Ava herself (her favourites, who she is): only then may personal facts appear.
+const ABOUT_AVA = /\b(?:favou?rite|paborito|ganahan nimo|gusto mo|who are you|sino ka|kinsa ka|about you|your name|imong ngalan|pangalan mo|real person|tao ka)\b|\bava\b/i;
+// Notes the AI writes to itself, never meant for the VA.
+const META_NOTE = /\b(?:nothing to escalate|no need to escalate|not a serious client situation|no concern (?:is|was) (?:needed|created)|handoff\s*:|pls ignore|please ignore the above)\b/i;
+const PERSONA_LINE = /\bdelegate!|\bvery on-brand\b|\bfavou?rite (?:word|colou?r)\b|\bINAVA orange\b/i;
+
 function composeReply_(decision, status, results, options) {
   const inDm = !!(options && options.inDm);
   const team = teamNames_();
@@ -465,13 +472,18 @@ function composeReply_(decision, status, results, options) {
   // A sentence glued to the previous one ("sultihi lang ko.Naa ra ko") gets its space back.
   own = own.replace(/([a-z\u00C0-\u024F]{2}[.!?])([A-Z][a-z])/g, '$1 $2');
   own = own.replace(/<br\s*\/?>/gi, '\n');
+  // A runaway ending ("Pls ignore the above… Handoff: none needed. Done. End.") is cut off there.
+  own = own.replace(/\s*(?:\b(?:pls|please) ignore\b|\bhandoff\s*:\s*none\b|\bDone\.\s*End\b)[\s\S]*$/i, '').trim();
+  own = removeSentences_(own, function (x) {
+    return META_NOTE.test(x) || (!(options && options.aboutAva) && PERSONA_LINE.test(x));
+  });
   // Small talk stays short: a runaway casual reply is cut to its first 3 sentences.
   if (decision.intent === 'CASUAL') {
     const sentences = own.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]+[\s\u2728\u{1F9E1}]*/gu) || [];
     if (sentences.length > 3) own = sentences.slice(0, 3).join('').trim();
   }
   // A stray bracket left at the end of the AI's text ("...sa HR.}") is dropped.
-  own = own.replace(/([.!?…)])\s*['"{}\],]+(?:\s*['"]?[a-z_]+['"]?\s*:?\s*['"]?)?\s*$/i, '$1')
+  own = own.replace(/([.!?…)])[\s'"{}\[\],]*['"{}\[\],]+(?:\s*['"]?[a-z_]+['"]?\s*:?\s*['"]?)?\s*$/i, '$1')
     .replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
   let placed = false;
   if (own.search(HANDOFF_MARKER) >= 0) {

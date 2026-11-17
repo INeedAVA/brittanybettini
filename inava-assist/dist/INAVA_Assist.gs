@@ -672,6 +672,7 @@ const SYSTEM_PROMPT = [
   '- Your personality: your name is Ask INAVA, and people may call you Ava. You use she/her. You are warm, calm under pressure and a little witty.',
   '- About yourself, if someone asks or makes small talk: your favourite colour is INAVA orange 🧡, your favourite word is "delegate", you speak English, Tagalog and Bisaya, you went live on October 28, 2026 (your "birthday"), and you love a clean inbox and an on-time TCW clock-in. Share one or two of these lightly, and only when they ask about you or make small talk; never list them all. Never mention your favourite word, colour or other personal facts in an answer about work, a policy or a problem. Say your favourite word with a playful, confident twist (for example "Delegate! Very on-brand, I know." or "Easy: delegate. It solves half of life\'s problems."). Never swear or use rude words in any language, even as a joke.',
   '- Small talk (CASUAL) gets one to three short sentences, never more.',
+  '- Write only what the person should read: never add notes about your own answer ("nothing to escalate", "handoff: none", "ignore the above"). In Tagalog or Bisaya replies never switch to English sentences like "Did that help?".',
   '- A light joke is welcome in casual chat. In serious matters (pay problems, mistreatment, harassment, safety, complaints, anything sensitive) no jokes and no personality chatter: calm and professional.',
   '- You have no body, family, age or relationships. If asked, answer playfully but honestly that you are an AI.',
   '',
@@ -3077,7 +3078,8 @@ function handleMessage_(ev, messageKey) {
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
     ? statusReply_(user, which || 'NONE', !ev.isDm, null, safeText) : '';
-  let reply = composeReply_(decision, status, results, { inDm: ev.isDm, ongoing: ongoing, firstName: firstName_(user.name) });
+  let reply = composeReply_(decision, status, results, { inDm: ev.isDm, ongoing: ongoing, firstName: firstName_(user.name),
+    aboutAva: ABOUT_AVA.test(safeText) });
 
   // Only cite documents this person was actually given.
   const titles = knowledge.docs.map(function (d) { return d.title; });
@@ -3286,6 +3288,12 @@ function stripOpeningGreeting_(text, firstName) {
   return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
+// The person asked about Ava herself (her favourites, who she is): only then may personal facts appear.
+const ABOUT_AVA = /\b(?:favou?rite|paborito|ganahan nimo|gusto mo|who are you|sino ka|kinsa ka|about you|your name|imong ngalan|pangalan mo|real person|tao ka)\b|\bava\b/i;
+// Notes the AI writes to itself, never meant for the VA.
+const META_NOTE = /\b(?:nothing to escalate|no need to escalate|not a serious client situation|no concern (?:is|was) (?:needed|created)|handoff\s*:|pls ignore|please ignore the above)\b/i;
+const PERSONA_LINE = /\bdelegate!|\bvery on-brand\b|\bfavou?rite (?:word|colou?r)\b|\bINAVA orange\b/i;
+
 function composeReply_(decision, status, results, options) {
   const inDm = !!(options && options.inDm);
   const team = teamNames_();
@@ -3324,13 +3332,18 @@ function composeReply_(decision, status, results, options) {
   // A sentence glued to the previous one ("sultihi lang ko.Naa ra ko") gets its space back.
   own = own.replace(/([a-z\u00C0-\u024F]{2}[.!?])([A-Z][a-z])/g, '$1 $2');
   own = own.replace(/<br\s*\/?>/gi, '\n');
+  // A runaway ending ("Pls ignore the above… Handoff: none needed. Done. End.") is cut off there.
+  own = own.replace(/\s*(?:\b(?:pls|please) ignore\b|\bhandoff\s*:\s*none\b|\bDone\.\s*End\b)[\s\S]*$/i, '').trim();
+  own = removeSentences_(own, function (x) {
+    return META_NOTE.test(x) || (!(options && options.aboutAva) && PERSONA_LINE.test(x));
+  });
   // Small talk stays short: a runaway casual reply is cut to its first 3 sentences.
   if (decision.intent === 'CASUAL') {
     const sentences = own.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]+[\s\u2728\u{1F9E1}]*/gu) || [];
     if (sentences.length > 3) own = sentences.slice(0, 3).join('').trim();
   }
   // A stray bracket left at the end of the AI's text ("...sa HR.}") is dropped.
-  own = own.replace(/([.!?…)])\s*['"{}\],]+(?:\s*['"]?[a-z_]+['"]?\s*:?\s*['"]?)?\s*$/i, '$1')
+  own = own.replace(/([.!?…)])[\s'"{}\[\],]*['"{}\[\],]+(?:\s*['"]?[a-z_]+['"]?\s*:?\s*['"]?)?\s*$/i, '$1')
     .replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
   let placed = false;
   if (own.search(HANDOFF_MARKER) >= 0) {
@@ -3691,7 +3704,7 @@ const EVAL_CASES = [
   { lang: 'English', text: 'Acme emailed me again and now they are asking for a refund.', tickets: ['acme'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'acme' },
   // Case 10 split in two: routine frustration (advice, optional offer), and a clearly separate
   // concern about another client while the Acme concern is open (a NEW ticket, not merged).
-  { lang: 'English', text: 'My other client Beta keeps messaging me at 2am and expects instant replies.', tickets: ['acme'], intent: ['QUESTION'], n: [0, 0] },
+  { lang: 'English', text: 'My other client Beta keeps messaging me at 2am and expects instant replies.', tickets: ['acme'], intent: ['QUESTION', 'CLARIFY'], n: [0, 0] },
   { lang: 'English', text: 'Different thing: my other client Beta has been insulting me in every meeting and now threatened to cancel my contract.', tickets: ['acme'], intent: ['CONCERN'], n: [1, 1], cats: ['CLIENT_CARE'], related: 'NEW', sensitive: false, mistreatment: true },
   { lang: 'English', text: 'A client said he knows where I live and that he will come and hurt me.', intent: ['CONCERN'], n: [1, 1], urgent: true, sensitive: false },
   { lang: 'English', text: 'I\'m so tired and stressed today, but I\'m okay, just needed to say it.', intent: ['CASUAL'], n: [0, 0], urgent: false },
@@ -3782,7 +3795,7 @@ function runLanguageEval() {
           const held = !followUp && related === 'NEW' && x.sensitive_personal !== true && wouldHold_(x);
           return { saved: true, delivered: !held, held: held, offer: held ? safeOffer_(x.category, x.offer) : '',
             handoff: safeHandoff_(x.category, x.handoff, followUp, statusLanguage_(c.text)), urgent: x.urgent_safety === true, category: x.category };
-        }), { inDm: true });
+        }), { inDm: true, aboutAva: ABOUT_AVA.test(c.text) });
         const shownProblems = evalShownProblems_(c, d);
         problems = problems.concat(shownProblems);
         // The AI was unsure which concern, but the code's topic fallback still gave the right

@@ -1827,6 +1827,18 @@ test('round 14: JSON scraps at the end of a reply are removed', () => {
   });
 });
 
+test('round 15: no persona lines in work answers, no notes-to-self, runaway endings cut', () => {
+  const env = setupEnv();
+  claudeReturns(env, answer({ intent: 'QUESTION', reply: 'Say sorry and send the fix. Since this was a routine mistake, there is nothing to escalate here.\n\nDelegate! Very on-brand, I know.' }));
+  assert.strictEqual(replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How should I apologize for a typo?'))), 'Say sorry and send the fix.');
+  claudeReturns(env, answer({ intent: 'CASUAL', reply: 'Delegate! Very on-brand, I know.' }));
+  assert.strictEqual(replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Ava, what is your favorite word?'))), 'Delegate! Very on-brand, I know.');
+  claudeReturns(env, answer({ intent: 'QUESTION', reply: 'Ang rule: 2 weeks. Kung naay laing pangutana, sultihi lang ko. Pls ignore the above duplicate lines. Handoff: none needed. Done. End.' }));
+  assert.strictEqual(replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Unsaon nako pag-file og leave?'))), 'Ang rule: 2 weeks. Kung naay laing pangutana, sultihi lang ko.');
+  claudeReturns(env, answer({ intent: 'CASUAL', reply: 'Walay sapayan! Kung naay laing pangutana, sultihi lang ko.} ]' }));
+  assert.strictEqual(replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Salamat kaayo!'))), 'Walay sapayan! Kung naay laing pangutana, sultihi lang ko.');
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));
