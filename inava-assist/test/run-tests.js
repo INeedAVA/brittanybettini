@@ -740,11 +740,14 @@ test('status questions: own tickets only, wording matches the recorded status ex
   const statusCol = env.sheet('Tickets')[0].indexOf('Status');
   const setStatus = (s) => { env.sheet('Tickets')[1][statusCol] = s; };
 
-  let r = ask('Any update sa akong leave?', id);
+  let r = ask('Any update on my leave?', id);
   assert.match(r, /^It's with Verge from our HR team \(passed on \d+ \w{3}\)\. There's no update recorded from them yet\.$/);
   assert.doesNotMatch(r, /review|working|looking/i);
+  // Asked in Bisaya or Tagalog: the same recorded status, in their language.
+  assert.match(ask('Any update sa akong leave?', id), /^Naa na ni sa Verge gikan sa among HR team \(gipasa niadtong \d+ \w{3}\)\. Wala pay update nga naka-record gikan nila\.$/);
   setStatus('In Progress');
-  assert.strictEqual(ask('kumusta na?', id), 'Verge from our HR team is working on it.');
+  assert.strictEqual(ask('how is it going?', id), 'Verge from our HR team is working on it.');
+  assert.strictEqual(ask('kumusta na?', id), 'Inaasikaso na ito ng Verge mula sa aming HR team.');
   setStatus('Awaiting Response');
   assert.match(ask('update?', id), /waiting for a reply from you/);
   setStatus('Resolved');
@@ -1105,7 +1108,7 @@ test('status answer is exactly the recorded status from the Tickets sheet, not t
   claudeReturns(env, answer({ intent: 'STATUS_REQUEST', status_ticket: id,
     reply: 'Kumusta! Makikita mo ang kasalukuyang status nito sa ibaba. Please wait for the update.' }));
   const r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Kumusta na yung leave ko?'));
-  assert.strictEqual(r.text, 'Verge from our HR team is working on it.');
+  assert.strictEqual(r.text, 'Inaasikaso na ito ng Verge mula sa aming HR team.');
   assert.strictEqual(ticketRows(env).length, 1);
 });
 
@@ -1200,7 +1203,8 @@ test('payroll: handled internally by its assignee, but VAs only ever hear "our P
   const id = t['Ticket ID'];
   env.sheet('Tickets')[1][env.sheet('Tickets')[0].indexOf('Status')] = 'In Progress';
   claudeReturns(env, answer({ intent: 'STATUS_REQUEST', reply: '', status_ticket: id }));
-  assert.strictEqual(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'update sa sahod ko?')).text, 'Our Payroll Team is working on it.');
+  assert.strictEqual(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'update sa sahod ko?')).text, 'Inaasikaso na ito ng aming Payroll Team.');
+  assert.strictEqual(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'any update on my pay?')).text, 'Our Payroll Team is working on it.');
   assert.match(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'my tickets')).text, /with our Payroll Team \(in progress\)/);
   claudeReturns(env, answer({ intent: 'FOLLOW_UP', reply: 'Thanks.', concerns: [concern({ category: 'PAYROLL', related_ticket: id, handoff: 'I\'ve let Verge know.' })] }));
   assert.strictEqual(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'It was for Oct 15')).text, 'Thanks.\n\nI\'ve let our Payroll Team know about this update.');
@@ -1403,15 +1407,16 @@ test('status by topic: the one matching own concern is answered; two matches or 
     return env.ctx.onMessage(dmEvent(email, uid, text)).text;
   };
   // The AI was unsure, but only one of Vicky's concerns is about leave.
-  assert.match(ask('va@inava.test', 'users/6', 'Kumusta na yung leave ko?'), /^It's with Verge from our HR team \(passed on/);
+  assert.match(ask('va@inava.test', 'users/6', 'Kumusta na yung leave ko?'), /^Nasa Verge mula sa aming HR team na ito \(naipasa noong/);
   // A client named in the message.
   assert.match(ask('va@inava.test', 'users/6', 'Any update on the Acme thing?'), /^It's with Cyn from our Client Care team/);
   // Vicky has no pay concern; Olive's pay concern is never used.
-  assert.match(ask('va@inava.test', 'users/6', 'update sa sahod ko?'), /Which one do you mean\?/);
+  assert.match(ask('va@inava.test', 'users/6', 'update sa sahod ko?'), /Alin ang tinutukoy mo\?/);
   assert.doesNotMatch(ask('va@inava.test', 'users/6', 'update sa sahod ko?'), /pay is late/);
   // Two leave concerns: ask which.
   raise('va@inava.test', 'users/6', 'RECRUITMENT_HR', 'Another leave request for Jan 2');
-  assert.match(ask('va@inava.test', 'users/6', 'Kumusta na yung leave ko?'), /^You've raised a few things with me\. Which one do you mean\?/);
+  assert.match(ask('va@inava.test', 'users/6', 'Kumusta na yung leave ko?'), /^Ilang bagay na ang naipaalam mo sa akin\. Alin ang tinutukoy mo\?\n- yung noong /);
+  assert.match(ask('va@inava.test', 'users/6', 'Kumusta na akong leave, naa na bay update?'), /^Pila na ka butang ang imong gipahibalo nako\. Asa ang imong pasabot\?\n- ang niadtong /);
   assert.strictEqual(ticketRows(env).length, 4, 'status questions never create tickets');
 });
 

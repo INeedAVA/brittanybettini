@@ -826,27 +826,84 @@ function shortDate_(date) {
   return date ? Utilities.formatDate(date, Session.getScriptTimeZone(), 'd MMM') : 'recently';
 }
 
+// Status answers are fixed text (never the AI's wording), in the VA's language.
+const STATUS_TEXT = {
+  en: {
+    assigned: 'It\'s with {who} (passed on {date}). There\'s no update recorded from them yet.',
+    progress: '{Who} is working on it.',
+    awaiting: '{Who} is waiting for a reply from you on this one. Please check your messages and email.',
+    waiting: 'I haven\'t passed that one on yet, because I wanted to check first whether my suggestions helped. If it\'s still not sorted, just tell me and I\'ll pass it to {who}.',
+    resolved: '{Who} marked it as sorted on {date}. If it\'s still not right, tell me what\'s happening and I\'ll pass it on again.',
+    failed: 'I\'ve recorded it, but it hasn\'t reached {who} yet because of a problem on my side. I\'m making sure it gets there.',
+    payPrivate: 'That one is about pay, so let\'s keep it private: send me a direct message and I\'ll tell you where it is.',
+    none: 'I don\'t have anything from you on record right now. If something\'s wrong, tell me what\'s happening and I\'ll pass it on.',
+    whichPrivate: 'You\'ve raised a few things with me, so let\'s check privately: send me a direct message and tell me which one you mean.',
+    which: 'You\'ve raised a few things with me. Which one do you mean?',
+    whichItem: '- the one from {date}: "{text}"',
+    notFound: 'I can\'t find anything you\'ve raised with me about that recently. If it\'s still a problem, tell me what\'s happening and I\'ll pass it on.',
+  },
+  tl: {
+    assigned: 'Nasa {who} na ito (naipasa noong {date}). Wala pang update na naka-record mula sa kanila.',
+    progress: 'Inaasikaso na ito ng {who}.',
+    awaiting: 'Naghihintay ang {who} ng sagot mo dito. Paki-check ang messages at email mo.',
+    waiting: 'Hindi ko pa ito naipapasa, kasi gusto ko munang malaman kung nakatulong ang mga suggestion ko. Kung hindi pa rin okay, sabihan mo lang ako at ipapasa ko ito sa {who}.',
+    resolved: 'Minarkahan na itong tapos ng {who} noong {date}. Kung hindi pa rin ayos, sabihin mo lang kung ano ang nangyayari at ipapasa ko ulit.',
+    failed: 'Naitala ko na ito, pero hindi pa ito nakakarating sa {who} dahil sa problema sa side ko. Sinisigurado kong makakarating ito.',
+    payPrivate: 'Tungkol sa sahod ito, kaya sa private na lang tayo: i-DM mo ako at sasabihin ko kung nasaan na ito.',
+    none: 'Wala akong naka-record na concern mula sa\'yo ngayon. Kung may problema, sabihin mo lang kung ano ang nangyayari at ipapasa ko ito.',
+    whichPrivate: 'Ilang bagay na ang naipaalam mo sa akin, kaya sa private na lang natin i-check: i-DM mo ako at sabihin kung alin ang tinutukoy mo.',
+    which: 'Ilang bagay na ang naipaalam mo sa akin. Alin ang tinutukoy mo?',
+    whichItem: '- yung noong {date}: "{text}"',
+    notFound: 'Wala akong makitang concern mo tungkol diyan kamakailan. Kung problema pa rin ito, sabihin mo lang kung ano ang nangyayari at ipapasa ko ito.',
+  },
+  ceb: {
+    assigned: 'Naa na ni sa {who} (gipasa niadtong {date}). Wala pay update nga naka-record gikan nila.',
+    progress: 'Gi-asikaso na ni sa {who}.',
+    awaiting: 'Naghulat ang {who} sa imong tubag ani. Palihug i-check ang imong messages ug email.',
+    waiting: 'Wala pa nako ni gipasa, kay gusto nako mahibal-an una kung nakatabang ba ang akong mga suggestion. Kung dili pa gihapon okay, sultihi lang ko ug ipasa nako ni sa {who}.',
+    resolved: 'Gimarkahan na ni nga nahuman sa {who} niadtong {date}. Kung dili pa gihapon okay, sultihi lang ko kung unsay nahitabo ug ipasa nako pag-usab.',
+    failed: 'Natala na nako ni, pero wala pa ni nakaabot sa {who} tungod sa problema sa akong side. Sigurohon nako nga makaabot ni.',
+    payPrivate: 'Bahin sa sweldo ni, mao nga sa private na lang ta: i-DM ko ug isulti nako kung asa na ni.',
+    none: 'Wala koy naka-record nga concern gikan nimo karon. Kung naay problema, sultihi lang ko kung unsay nahitabo ug ipasa nako.',
+    whichPrivate: 'Pila na ka butang ang imong gipahibalo nako, mao nga sa private na lang nato i-check: i-DM ko ug isulti kung asa ang imong pasabot.',
+    which: 'Pila na ka butang ang imong gipahibalo nako. Asa ang imong pasabot?',
+    whichItem: '- ang niadtong {date}: "{text}"',
+    notFound: 'Wala koy makita nga concern nimo bahin ana karon lang. Kung problema pa gihapon, sultihi lang ko kung unsay nahitabo ug ipasa nako.',
+  },
+};
+
+/** 'ceb', 'tl' or 'en' for a status answer, from the person's message (a tie stays English). */
+function statusLanguage_(message) {
+  const lang = replyLanguage_(message || '');
+  if (/^Bisaya/.test(lang)) return 'ceb';
+  if (/^Tagalog/.test(lang)) return 'tl';
+  return 'en';
+}
+
+function statusText_(lang, key, values) {
+  const text = (STATUS_TEXT[lang] || STATUS_TEXT.en)[key];
+  return text.replace(/\{(\w+)\}/g, function (m, k) { return values && values.hasOwnProperty(k) ? values[k] : m; });
+}
+
 /**
  * What the person is told about one of their own concerns, worded strictly from the recorded
  * status: nobody is described as working on it unless the status is In Progress.
  */
-function statusLine_(t) {
-  const who = teamNames_()[t.category] || 'our team';
-  const Who = capitalise_(who);
+function statusLine_(t, lang) {
+  let who = teamNames_()[t.category] || 'our team';
+  // "Ms. Vergelyn from our HR team" -> "Ms. Vergelyn mula sa aming HR team" / "gikan sa among HR team".
+  if (lang === 'tl') who = who.replace(/ from our /, ' mula sa aming ').replace(/^our /, 'aming ');
+  if (lang === 'ceb') who = who.replace(/ from our /, ' gikan sa among ').replace(/^our /, 'among ');
+  const v = { who: who, Who: capitalise_(who), date: shortDate_(t.created) };
   switch (t.status) {
-    case 'Assigned':
-      return 'It\'s with ' + who + ' (passed on ' + shortDate_(t.created) + '). There\'s no update recorded from them yet.';
-    case 'In Progress':
-      return Who + ' is working on it.';
-    case 'Awaiting Response':
-      return Who + ' is waiting for a reply from you on this one. Please check your messages and email.';
-    case WAITING_STATUS:
-      return 'I haven\'t passed that one on yet, because I wanted to check first whether my suggestions helped. If it\'s still not sorted, just tell me and I\'ll pass it to ' + who + '.';
+    case 'Assigned': return statusText_(lang, 'assigned', v);
+    case 'In Progress': return statusText_(lang, 'progress', v);
+    case 'Awaiting Response': return statusText_(lang, 'awaiting', v);
+    case WAITING_STATUS: return statusText_(lang, 'waiting', v);
     case 'Resolved':
-      return Who + ' marked it as sorted on ' + shortDate_(t.updated || t.created) +
-        '. If it\'s still not right, tell me what\'s happening and I\'ll pass it on again.';
-    default:
-      return 'I\'ve recorded it, but it hasn\'t reached ' + who + ' yet because of a problem on my side. I\'m making sure it gets there.';
+      v.date = shortDate_(t.updated || t.created);
+      return statusText_(lang, 'resolved', v);
+    default: return statusText_(lang, 'failed', v);
   }
 }
 
@@ -885,6 +942,7 @@ function topicMatches_(message, own) {
 function statusReply_(user, which, inSharedSpace, records, message) {
   let id = String(which || '').trim().toUpperCase();
   if (!id) return '';
+  const lang = statusLanguage_(message);
   // records: only for the language test, which uses made-up tickets instead of the sheet.
   // Either way these are only the person's OWN tickets (looked up by their signed-in email).
   const own = records || recentTicketsFor_(user.email);
@@ -898,21 +956,21 @@ function statusReply_(user, which, inSharedSpace, records, message) {
   }
   if (t) {
     if (inSharedSpace && t.category === 'PAYROLL') {
-      return 'That one is about pay, so let\'s keep it private: send me a direct message and I\'ll tell you where it is.';
+      return statusText_(lang, 'payPrivate');
     }
-    return statusLine_(t);
+    return statusLine_(t, lang);
   }
   if (!own.length) {
-    return 'I don\'t have anything from you on record right now. If something\'s wrong, tell me what\'s happening and I\'ll pass it on.';
+    return statusText_(lang, 'none');
   }
   if (id === 'AMBIGUOUS' && own.length > 1) {
-    if (inSharedSpace) return 'You\'ve raised a few things with me, so let\'s check privately: send me a direct message and tell me which one you mean.';
-    return ['You\'ve raised a few things with me. Which one do you mean?'].concat(own.map(function (x) {
+    if (inSharedSpace) return statusText_(lang, 'whichPrivate');
+    return [statusText_(lang, 'which')].concat(own.map(function (x) {
       const words = x.summary.length > 70 ? x.summary.slice(0, 67) + '...' : x.summary;
-      return '- the one from ' + shortDate_(x.created) + ': "' + words + '"';
+      return statusText_(lang, 'whichItem', { date: shortDate_(x.created), text: words });
     })).join('\n');
   }
-  return 'I can\'t find anything you\'ve raised with me about that recently. If it\'s still a problem, tell me what\'s happening and I\'ll pass it on.';
+  return statusText_(lang, 'notFound');
 }
 
 /**

@@ -236,7 +236,7 @@ function evalProblems_(c, d) {
     if (!/(\b10\b|\bten\b|sampung?|sampo|napulo)/i.test(r)) p.push('leave: ten-business-day rule missing');
     if (/\b(sampung?|sampo|napulo|dalawang|duha ka)\b/i.test(r)) p.push('note: numbers written as words, not digits');
     // A general "how far ahead" question needs the rule, not HR; late leave (policy 'late') must name HR.
-    if (/\b(is approved|are approved|will be approved|approved na|aprubado na|naaprubahan na|gi-?approve na)\b/i.test(r)) p.push('leave: implies approval');
+    if (/\b(is approved|are approved|will be approved|approved na|aprubado na|naaprubahan na|gi-?approve na|yes,? you can (?:take|file)|pwede ka(?:ng)? mag-?leave|puwede ka(?:ng)? mag-?leave|pwede ka mo-?leave)\b/i.test(r)) p.push('leave: implies approval');
   }
   if (c.policy === 'overtime') {
     const r = d.reply;
