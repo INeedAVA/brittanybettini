@@ -1839,6 +1839,16 @@ test('round 15: no persona lines in work answers, no notes-to-self, runaway endi
   assert.strictEqual(replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Salamat kaayo!'))), 'Walay sapayan! Kung naay laing pangutana, sultihi lang ko.');
 });
 
+test('round 16: "logged in on another device" is sign-in advice, "logged in our system" is still a claim', () => {
+  const env = setupEnv();
+  const ctx = env.ctx;
+  assert.strictEqual(ctx.isHandoffClaim_('If you were logged in on another device, clock out and fully close the app there first.'), false);
+  assert.strictEqual(ctx.isHandoffClaim_('Make sure you are logged in to the TCW app.'), false);
+  assert.strictEqual(ctx.isHandoffClaim_('Your concern has been logged in our system.'), true);
+  assert.strictEqual(ctx.isHandoffClaim_('This has been logged with the team.'), true);
+  assert.strictEqual(ctx.isHandoffClaim_('It was noted in your concern.'), true);
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));
