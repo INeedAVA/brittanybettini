@@ -1539,6 +1539,17 @@ test('round 7: no "taken seriously" promises; "how it is handled" advice stays',
   assert.strictEqual(clean('That is not okay, and it is serious.'), 'That is not okay, and it is serious.');
 });
 
+test('round 8: Bisaya and Tagalog "just tell me and I\'ll pass it on" offers stay', () => {
+  const env = setupEnv();
+  const clean = (t) => env.ctx.cleanReply_(t);
+  const offers = ['Kung dili pa mahupay ang client, sultihi ko lang ug ipasa nako ni kang Ms. Cynthia from our Client Care team.',
+    'Kung internal VA ka, sultihi lang ko ug ipasa nako kay Ms. Mabelle from our Operations team.',
+    'Kung hindi pa rin okay, sabihan mo lang ako at ipapasa ko ito kay Ms. Cynthia.'];
+  offers.forEach((o) => assert.strictEqual(clean(o), o));
+  // A claim that it already happened is still removed.
+  assert.strictEqual(clean('Okay. Gipasa na nako ni kang Ms. Cynthia.'), 'Okay.');
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try logging out of Hubstaff and back in.\n\n[HANDOFF]', concerns: [toolConcern()] }));

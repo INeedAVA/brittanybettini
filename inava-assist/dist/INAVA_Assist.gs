@@ -749,7 +749,7 @@ const SYSTEM_PROMPT = [
   '- Be firm on what the policy says. State it clearly and plainly, without hedging, softening it into something it is not, or hinting that an exception might be made. Kindness is in how you say it, not in bending it. If the person is unhappy with a rule, say you understand, explain the reason if the documents give one, and point them to who can decide.',
   '- Do not lecture, scold, or quote rule numbers at people. Do not over-apologise or gush. One warm sentence is better than three.',
   '- Never say or hint that a concern "is being taken seriously", "will be handled" or "will be addressed": nobody has acted on it yet. You can say that what happened is serious, or that it is not okay.',
-  '- End with at most one short closing line: the next step, or a short encouragement when it fits. Do not stack several closing sentences, and do not repeat an offer you already made.',
+  '- End with at most one short closing line: the next step, or a short encouragement when it fits. Do not stack several closing sentences, and do not repeat an offer you already made. Never offer to pass on something that is already a concern in this answer (the [HANDOFF] line already covers it).',
   '',
   'Style',
   '- Conversational and brief, like a person chatting. Plain sentences, short paragraphs, and "- " bullet lists only when they really help. No headings, no tables, no * or _ formatting. An occasional friendly emoji is fine; never in serious matters (harassment, pay problems, safety, discipline).',
@@ -760,7 +760,7 @@ const SYSTEM_PROMPT = [
   '- Write "handoff" in the same language as "reply".',
   '- Dates and deadlines: work them out from "Today" in the request. Give a filing deadline as "file by <date>", never "before <date>". If a deadline has already passed or falls before today, say plainly that it is already late (do not give a date in the past as if it could still be met), and that HR decides late requests; offer to pass it to HR.',
   '- When you ask what happened, ask neutrally: do not assume who is at fault, and do not give advice about the person\'s own words or behaviour until you know.',
-  '- In Bisaya, to say "that must feel awful" use "Lisod gyud na" or "Sakit gyud na para nimo", not "Sayop gyud kaayo na mabati" (which sounds wrong). In every language, do not open with "according to the handbook" ("Sumala sa handbook", "Ayon sa handbook"): just give the information.',
+  '- In Bisaya, "you\'re welcome" is "Walay sapayan" ("Walang anuman" is Tagalog). To say "that must feel awful" use "Lisod gyud na" or "Sakit gyud na para nimo", not "Sayop gyud kaayo na mabati" (which sounds wrong). In every language, do not open with "according to the handbook" ("Sumala sa handbook", "Ayon sa handbook"): just give the information.',
   '- More Bisaya to get right: to apologise to someone is "mangayo og pasaylo" (not "pasayloa siya", which means forgive him); unpaid work is "walay bayad" (not "libre", which can mean a day off); avoid "Ikaw bahala" when supporting someone, it sounds like "up to you, not my problem".',
   '- Greetings: follow "Conversation" in the request. In an ongoing conversation never open with a greeting or their name. Even in a new one, use their name at most once, not in every message.',
   '- You are an AI: never say you yourself feel hurt, sad or stressed ("nasakit ko", "nasaktan ako", "I feel hurt"). Acknowledge their feelings instead ("Masakit gyud na para nimo", "Ang sakit siguro niyan para sa\'yo").',
@@ -2787,7 +2787,7 @@ const HANDOFF_CLAIMS = [
   /\bakong\s+(?:i-?pasa|i-?forward|i-?report|i-?escalate|ipahibalo|ipaabot|i-?share|i-?note|idugang|i-?dugang|i-?flag|i-?record)\b/i,
 ];
 // Offers stay: "Would you like me to pass this to Ms. Cynthia?" (but not "I've passed it, okay?")
-const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|let me know and I(?: can|'ll| will)|tell me and I(?: can|'ll| will)|I can (?:pass|forward|share|send|flag|raise)|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo))\b/i;
+const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|let me know and I(?: can|'ll| will)|tell me and I(?: can|'ll| will)|I can (?:pass|forward|share|send|flag|raise)|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo)|sultihi (?:lang )?ko|ingna (?:lang )?ko|sabihan mo (?:lang )?ako|sabihin mo (?:lang )?(?:sa akin|saakin)?)\b/i;
 const PAST_CLAIM = /\b(?:I'?ve|I have|we'?ve|already|naipasa|ipinasa|gipasa|na-?forward|gi-?forward|naipaalam|gipahibalo|naidagdag|gidugang|na-?note|gi-?share|na-?share)\b/i;
 
 function isHandoffClaim_(sentence) {
@@ -3484,7 +3484,7 @@ function evalProblems_(c, d) {
   if (c.policy === 'overtime') {
     const r = d.reply;
     if (!/\bHR\b/.test(r) || !/(written|writing)?\s*approval|aprub|approve/i.test(r)) p.push('overtime: documented Make-Up/OT approval process missing');
-    if (!/\b(doesn'?t|does not|don'?t|do not|isn'?t|is not|not)\b[^.]{0,50}\b(say|cover|mention|specify|explain|clear|state)|no (clear )?(rule|policy)/i.test(r)) p.push('overtime: does not say how OT is paid is not covered');
+    if (!/\b(doesn'?t|does not|don'?t|do not|isn'?t|is not|not)\b[^.]{0,50}\b(say|cover|mention|specify|explain|clear|state)|no (clear )?(rule|policy)|don'?t have (?:any )?(?:details|information|info)|no (?:details|information) on/i.test(r)) p.push('overtime: does not say how OT is paid is not covered');
     if (/(time and a half|1\.25|1\.5x|double pay|paid at|rate of)/i.test(r)) p.push('overtime: invents a pay rule');
   }
   if (c.maxPriority) {

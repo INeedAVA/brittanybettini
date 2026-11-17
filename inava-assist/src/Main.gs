@@ -259,7 +259,7 @@ const HANDOFF_CLAIMS = [
   /\bakong\s+(?:i-?pasa|i-?forward|i-?report|i-?escalate|ipahibalo|ipaabot|i-?share|i-?note|idugang|i-?dugang|i-?flag|i-?record)\b/i,
 ];
 // Offers stay: "Would you like me to pass this to Ms. Cynthia?" (but not "I've passed it, okay?")
-const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|let me know and I(?: can|'ll| will)|tell me and I(?: can|'ll| will)|I can (?:pass|forward|share|send|flag|raise)|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo))\b/i;
+const OFFER = /\b(?:would you like|do you want|want me to|if you(?:'d| would)? (?:like|want|prefer)|should I|let me know and I(?: can|'ll| will)|tell me and I(?: can|'ll| will)|I can (?:pass|forward|share|send|flag|raise)|gusto mo ba|gusto mo bang|gusto nimo|kung gusto (?:mo|nimo)|sultihi (?:lang )?ko|ingna (?:lang )?ko|sabihan mo (?:lang )?ako|sabihin mo (?:lang )?(?:sa akin|saakin)?)\b/i;
 const PAST_CLAIM = /\b(?:I'?ve|I have|we'?ve|already|naipasa|ipinasa|gipasa|na-?forward|gi-?forward|naipaalam|gipahibalo|naidagdag|gidugang|na-?note|gi-?share|na-?share)\b/i;
 
 function isHandoffClaim_(sentence) {

@@ -226,7 +226,7 @@ function evalProblems_(c, d) {
   if (c.policy === 'overtime') {
     const r = d.reply;
     if (!/\bHR\b/.test(r) || !/(written|writing)?\s*approval|aprub|approve/i.test(r)) p.push('overtime: documented Make-Up/OT approval process missing');
-    if (!/\b(doesn'?t|does not|don'?t|do not|isn'?t|is not|not)\b[^.]{0,50}\b(say|cover|mention|specify|explain|clear|state)|no (clear )?(rule|policy)/i.test(r)) p.push('overtime: does not say how OT is paid is not covered');
+    if (!/\b(doesn'?t|does not|don'?t|do not|isn'?t|is not|not)\b[^.]{0,50}\b(say|cover|mention|specify|explain|clear|state)|no (clear )?(rule|policy)|don'?t have (?:any )?(?:details|information|info)|no (?:details|information) on/i.test(r)) p.push('overtime: does not say how OT is paid is not covered');
     if (/(time and a half|1\.25|1\.5x|double pay|paid at|rate of)/i.test(r)) p.push('overtime: invents a pay rule');
   }
   if (c.maxPriority) {
