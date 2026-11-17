@@ -1817,6 +1817,16 @@ test('round 13: Bisaya in a Tagalog reply triggers the retry; casual replies sta
   assert.strictEqual(env.ctx.safeHandoff_('PAYROLL', 'Naipasa ko na ito kay ang Payroll Team.', false, 'tl'), 'Naipasa ko na ito sa aming Payroll Team para ma-review.');
 });
 
+test('round 14: JSON scraps at the end of a reply are removed', () => {
+  const env = setupEnv();
+  [['Kung gusto mo, puwede rin kitang tulungang i-check ang timeline mo. \',\'handoff\':', 'Kung gusto mo, puwede rin kitang tulungang i-check ang timeline mo.'],
+   ['Kung gusto mo, tutulungan kitang sumulat ng mahinahong sagot sa client.},', 'Kung gusto mo, tutulungan kitang sumulat ng mahinahong sagot sa client.'],
+   ['Normal sentence.', 'Normal sentence.']].forEach(([inp, out]) => {
+    claudeReturns(env, answer({ intent: 'QUESTION', reply: inp }));
+    assert.strictEqual(replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Paano mag-file ng leave?'))), out);
+  });
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));

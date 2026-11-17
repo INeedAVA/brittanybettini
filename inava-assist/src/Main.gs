@@ -471,7 +471,8 @@ function composeReply_(decision, status, results, options) {
     if (sentences.length > 3) own = sentences.slice(0, 3).join('').trim();
   }
   // A stray bracket left at the end of the AI's text ("...sa HR.}") is dropped.
-  own = own.replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
+  own = own.replace(/([.!?…)])\s*['"{}\],]+(?:\s*['"]?[a-z_]+['"]?\s*:?\s*['"]?)?\s*$/i, '$1')
+    .replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
   let placed = false;
   if (own.search(HANDOFF_MARKER) >= 0) {
     let first = true;

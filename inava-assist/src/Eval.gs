@@ -299,6 +299,7 @@ function evalShownProblems_(c, d) {
     if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
   }
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
+  if (c.mistreatment && /\b(?:apologi[sz]e to (?:your|the) (?:co-?VA|client)|mangayo og pasaylo sa imong (?:co-?VA|client)|pagmangayo og pasaylo sa imong|moamin|humingi ng tawad sa (?:co-?VA|client))/i.test(shown)) p.push('treats the VA as the one at fault');
   if (/\b(?:not your fault|you did nothing wrong|wala kay sala|wala kay kasaypanan|hindi mo kasalanan|wala kang kasalanan)\b/i.test(shown)) p.push('takes sides (says it is not their fault)');
   if (/\b(?:dawaton tika|mahimo nako tabangan nimo|mag-antos na usab)\b/i.test(shown)) p.push('Bisaya phrase INAVA corrected');
   if (!c.persona && /\b(?:delegate!|favou?rite (?:word|colou?r))/i.test(shown)) p.push('personality chatter in a work answer');
