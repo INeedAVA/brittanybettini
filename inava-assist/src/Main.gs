@@ -126,7 +126,7 @@ const GROUP_WELCOME_TEXT = [
   '',
   'Mention @Ask INAVA here, or send me a direct message for anything private. I speak English, Tagalog and Bisaya, so use whichever you like.',
   '',
-  'A few fun facts: my favourite colour is INAVA orange 🧡, my favourite word is "delegate", and if I could drink coffee, I\'d still be on my first cup.',
+  'A few fun facts: my favourite colour is INAVA orange 🧡, and my favourite word is "delegate" (very on-brand, I know).',
 ].join('\n');
 
 const NOT_REGISTERED_TEXT = '\n\nI don\'t have you on INAVA\'s approved list yet, so I can\'t answer questions for you. ' +

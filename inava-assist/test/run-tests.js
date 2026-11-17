@@ -1705,7 +1705,8 @@ test('welcome: a newly approved group chat gets one introduction from Ava; the t
   const text = welcomes()[0].body.text;
   assert.match(text, /^Hi everyone! 👋 I'm Ask INAVA, the new AI assistant here at INAVA\. You can call me Ava\./);
   assert.match(text, /English, Tagalog and Bisaya/);
-  assert.match(text, /favourite colour is INAVA orange 🧡, my favourite word is "delegate"/);
+  assert.match(text, /favourite colour is INAVA orange 🧡, and my favourite word is "delegate" \(very on-brand, I know\)\./);
+  assert.doesNotMatch(text, /coffee/i);
   assert.ok(spaces.find((r) => r[0] === 'spaces/announce')[col('Welcomed')], 'marked as welcomed');
   assert.ok(!env.sent.chat.some((c) => /spaces\/inbox\/messages/.test(c.url) && /new AI assistant/.test(c.body.text || '')), 'never in the team inbox');
   // Added to a chat that is already approved: the reply is the introduction, and it is not repeated later.
