@@ -222,10 +222,10 @@ const SENSITIVE_TEXT = 'Sensitive personal safety concern. Please contact this V
  * The AI's handoff sentence, or the standard one when it gave none. For payroll, a sentence
  * that names a person (or not the Payroll Team) is replaced, so who handles pay stays private.
  */
-function safeHandoff_(category, text, isFollowUp) {
+function safeHandoff_(category, text, isFollowUp, lang) {
   const h = trimPromise_(String(text || '').trim());
-  if (!h) return defaultHandoff_(category, isFollowUp);
-  if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp);
+  if (!h) return defaultHandoff_(category, isFollowUp, lang);
+  if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp, lang);
   return h;
 }
 
@@ -257,8 +257,14 @@ function namesTeamMember_(text) {
 }
 
 /** "I've passed this to Ms. Cynthia from our Client Care team, ..." when Claude gave none. */
-function defaultHandoff_(category, isFollowUp) {
+function defaultHandoff_(category, isFollowUp, lang) {
   const who = teamNames_()[category] || 'the right person on our team';
+  // In the VA's language when they wrote in Tagalog or Bisaya.
+  if (lang === 'tl' || lang === 'ceb') {
+    const w = localWho_(who, lang);
+    if (lang === 'tl') return isFollowUp ? 'Naipaalam ko na ang update na ito sa ' + w + '.' : 'Naipasa ko na ito sa ' + w + ' para ma-review.';
+    return isFollowUp ? 'Gipahibalo na nako kini nga update sa ' + w + '.' : 'Gipasa na nako ni sa ' + w + ' para ma-review.';
+  }
   if (category === 'PAYROLL') {
     return isFollowUp ? 'I\'ve let ' + who + ' know about this update.' : 'I\'ve forwarded your concern to ' + who + ' for review.';
   }
@@ -279,6 +285,7 @@ function defaultHandoff_(category, isFollowUp) {
 function escalateConcerns_(concerns, user, source) {
   const valid = (concerns || []).filter(function (c) { return c && CATEGORIES.hasOwnProperty(c.category); });
   if (!valid.length) return [];
+  const lang = statusLanguage_(source.message);
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -298,7 +305,7 @@ function escalateConcerns_(concerns, user, source) {
           const isNew = t.sourceRefs[0].indexOf(prefix) === 0;
           return { ticketId: t.id, category: t.category, isNew: isNew, saved: true,
             delivered: isNew ? t.delivery !== 'Pending' && t.status !== 'New' : t.delivery.indexOf('Pending update') !== 0,
-            handoff: defaultHandoff_(t.category, !isNew), urgent: false };
+            handoff: defaultHandoff_(t.category, !isNew, lang), urgent: false };
         });
       }
     }
@@ -325,7 +332,7 @@ function escalateConcerns_(concerns, user, source) {
           const added = redactConcern_(related.category, concernTextFor_(c, source.message, valid.length));
           const ok = releaseHeld_(related, user, 'they still needed help', added, ref);
           results.push({ ticketId: related.id, category: related.category, isNew: true, saved: true, delivered: ok,
-            handoff: safeHandoff_(related.category, c.handoff, false), urgent: false });
+            handoff: safeHandoff_(related.category, c.handoff, false, lang), urgent: false });
           return;
         }
         if (related) {
@@ -339,13 +346,13 @@ function escalateConcerns_(concerns, user, source) {
           updated[related.id] = true;
           const r = addFollowUp_(related, text, user, ref, urgent);
           results.push({ ticketId: related.id, category: related.category, isNew: false, saved: true, delivered: r,
-            handoff: safeHandoff_(related.category, c.handoff, true), urgent: urgent });
+            handoff: safeHandoff_(related.category, c.handoff, true, lang), urgent: urgent });
         } else {
           const raw = sensitive ? SENSITIVE_TEXT : concernTextFor_(c, source.message, valid.length);
           const hold = !sensitive && wouldHold_(c);
           const t = createTicket_(c, raw, user, source, ref, earlier, hold);
           results.push({ ticketId: t.id, category: c.category, isNew: true, saved: true, delivered: t.delivered,
-            handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent,
+            handoff: safeHandoff_(c.category, c.handoff, false, lang), urgent: urgent,
             held: hold, offer: hold && !c.quiet ? safeOffer_(c.category, c.offer) : '' });
         }
       } catch (e) {
@@ -889,11 +896,15 @@ function statusText_(lang, key, values) {
  * What the person is told about one of their own concerns, worded strictly from the recorded
  * status: nobody is described as working on it unless the status is In Progress.
  */
+/** "Ms. Vergelyn from our HR team" -> "Ms. Vergelyn mula sa aming HR team" / "gikan sa among HR team". */
+function localWho_(who, lang) {
+  if (lang === 'tl') return who.replace(/ from our /, ' mula sa aming ').replace(/^our /, 'aming ').replace(/^the right person on our team$/, 'tamang tao sa aming team');
+  if (lang === 'ceb') return who.replace(/ from our /, ' gikan sa among ').replace(/^our /, 'among ').replace(/^the right person on our team$/, 'saktong tawo sa among team');
+  return who;
+}
+
 function statusLine_(t, lang) {
-  let who = teamNames_()[t.category] || 'our team';
-  // "Ms. Vergelyn from our HR team" -> "Ms. Vergelyn mula sa aming HR team" / "gikan sa among HR team".
-  if (lang === 'tl') who = who.replace(/ from our /, ' mula sa aming ').replace(/^our /, 'aming ');
-  if (lang === 'ceb') who = who.replace(/ from our /, ' gikan sa among ').replace(/^our /, 'among ');
+  const who = localWho_(teamNames_()[t.category] || 'our team', lang);
   const v = { who: who, Who: capitalise_(who), date: shortDate_(t.created) };
   switch (t.status) {
     case 'Assigned': return statusText_(lang, 'assigned', v);

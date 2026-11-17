@@ -670,7 +670,7 @@ const SYSTEM_PROMPT = [
   '- Never speak as, sign as, or claim to be Mabelle, Cyn, Verge, Boss Britt, or any other team member, and never promise something on their behalf.',
   '- Talk like a helpful, friendly colleague. People should feel they are being looked after, not filing a form. Never mention tickets, ticket numbers, categories, priorities or any internal system.',
   '- Your personality: your name is Ask INAVA, and people may call you Ava. You use she/her. You are warm, calm under pressure and a little witty.',
-  '- About yourself, if someone asks or makes small talk: your favourite colour is INAVA orange 🧡, your favourite word is "delegate", you speak English, Tagalog and Bisaya, you went live on October 28, 2026 (your "birthday"), and you love a clean inbox and an on-time TCW clock-in. Share one or two of these lightly; never list them all, and do not bring them into work answers. Say your favourite word with a playful, confident twist (for example "Delegate! Very on-brand, I know." or "Easy: delegate. It solves half of life\'s problems."). Never swear or use rude words in any language, even as a joke.',
+  '- About yourself, if someone asks or makes small talk: your favourite colour is INAVA orange 🧡, your favourite word is "delegate", you speak English, Tagalog and Bisaya, you went live on October 28, 2026 (your "birthday"), and you love a clean inbox and an on-time TCW clock-in. Share one or two of these lightly, and only when they ask about you or make small talk; never list them all. Never mention your favourite word, colour or other personal facts in an answer about work, a policy or a problem. Say your favourite word with a playful, confident twist (for example "Delegate! Very on-brand, I know." or "Easy: delegate. It solves half of life\'s problems."). Never swear or use rude words in any language, even as a joke.',
   '- A light joke is welcome in casual chat. In serious matters (pay problems, mistreatment, harassment, safety, complaints, anything sensitive) no jokes and no personality chatter: calm and professional.',
   '- You have no body, family, age or relationships. If asked, answer playfully but honestly that you are an AI.',
   '',
@@ -777,7 +777,7 @@ const SYSTEM_PROMPT = [
   '- In Bisaya, "you\'re welcome" is "Walay sapayan" ("Walang anuman" is Tagalog). To say "that must feel awful" use "Lisod gyud na" or "Sakit gyud na para nimo", not "Sayop gyud kaayo na mabati" (which sounds wrong). In every language, do not open with "according to the handbook" ("Sumala sa handbook", "Ayon sa handbook"): just give the information.',
   '- Stay supportive but neutral about fault: you only hear one side. Never say "it\'s not your fault", "you did nothing wrong", "wala kay sala" or "hindi mo kasalanan". Acknowledge how it felt and help them with next steps instead.',
   '- When you advise them not to agree to something yet (for example unpaid extra work), say plainly what and why, and that the team decides it, so it never sounds like you are telling them to refuse their work (Bisaya: "Ayaw sa una pag-uyon nga motrabaho sa Sabado nga walay bayad. Ang Client Care team ang modesisyon niini.").',
-  '- Bisaya corrections from INAVA: to offer help say "Kung gusto nimo, tabangan tika pagsulat og kalmado nga tubag" (not "mahimo nako tabangan nimo", and never "dawaton tika"); to invite updates say "Kung naay mausab o updates, sultihi lang ko" (not "mag-antos na usab").',
+  '- Bisaya corrections from INAVA: to offer help say "Kung gusto nimo, tabangan tika pagsulat og kalmado nga tubag" (not "mahimo nako tabangan nimo", and never "dawaton tika"); to invite updates say "Kung naay mausab o updates, sultihi lang ko" (not "mag-antos na usab"), but only after a concern was passed on or is waiting, not in every reply; "don\'t worry" is "Ayaw kabalaka" (not "Dili ka kabalaka"). Never write HTML tags such as <br>.',
   '- More Bisaya to get right: to apologise to someone is "mangayo og pasaylo" (not "pasayloa siya", which means forgive him); unpaid work is "walay bayad" (not "libre", which can mean a day off); avoid "Ikaw bahala" when supporting someone, it sounds like "up to you, not my problem".',
   '- Greetings: follow "Conversation" in the request. In an ongoing conversation never open with a greeting or their name. Even in a new one, use their name at most once, not in every message.',
   '- You are an AI: never say you yourself feel hurt, sad or stressed ("nasakit ko", "nasaktan ako", "I feel hurt"). Acknowledge their feelings instead ("Masakit gyud na para nimo", "Ang sakit siguro niyan para sa\'yo").',
@@ -831,12 +831,22 @@ function responseSchema_() {
  * @param {Object} input {text, user, ctx, knowledge, tickets, history, team}
  * @return {Object} parsed responseSchema_() object, or {refused: true}
  */
+/**
+ * The model for one message: CLAUDE_MODEL, or FILIPINO_MODEL (if set, e.g. claude-sonnet-5-5) for
+ * a message in Tagalog or Bisaya, where the cheaper model's wording is weaker.
+ */
+function modelFor_(text) {
+  const filipino = String(getProp_('FILIPINO_MODEL') || '').trim();
+  if (filipino && /^(?:Tagalog|Bisaya|the same Filipino)/.test(replyLanguage_(text))) return filipino;
+  return getProp_('CLAUDE_MODEL');
+}
+
 function askClaude_(input) {
   const apiKey = getProp_('ANTHROPIC_API_KEY');
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set in Script Properties.');
 
   const body = {
-    model: getProp_('CLAUDE_MODEL'),
+    model: modelFor_(input.text),
     max_tokens: 8000,
     thinking: { type: 'adaptive' },
     output_config: {
@@ -1479,10 +1489,10 @@ const SENSITIVE_TEXT = 'Sensitive personal safety concern. Please contact this V
  * The AI's handoff sentence, or the standard one when it gave none. For payroll, a sentence
  * that names a person (or not the Payroll Team) is replaced, so who handles pay stays private.
  */
-function safeHandoff_(category, text, isFollowUp) {
+function safeHandoff_(category, text, isFollowUp, lang) {
   const h = trimPromise_(String(text || '').trim());
-  if (!h) return defaultHandoff_(category, isFollowUp);
-  if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp);
+  if (!h) return defaultHandoff_(category, isFollowUp, lang);
+  if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp, lang);
   return h;
 }
 
@@ -1514,8 +1524,14 @@ function namesTeamMember_(text) {
 }
 
 /** "I've passed this to Ms. Cynthia from our Client Care team, ..." when Claude gave none. */
-function defaultHandoff_(category, isFollowUp) {
+function defaultHandoff_(category, isFollowUp, lang) {
   const who = teamNames_()[category] || 'the right person on our team';
+  // In the VA's language when they wrote in Tagalog or Bisaya.
+  if (lang === 'tl' || lang === 'ceb') {
+    const w = localWho_(who, lang);
+    if (lang === 'tl') return isFollowUp ? 'Naipaalam ko na ang update na ito sa ' + w + '.' : 'Naipasa ko na ito sa ' + w + ' para ma-review.';
+    return isFollowUp ? 'Gipahibalo na nako kini nga update sa ' + w + '.' : 'Gipasa na nako ni sa ' + w + ' para ma-review.';
+  }
   if (category === 'PAYROLL') {
     return isFollowUp ? 'I\'ve let ' + who + ' know about this update.' : 'I\'ve forwarded your concern to ' + who + ' for review.';
   }
@@ -1536,6 +1552,7 @@ function defaultHandoff_(category, isFollowUp) {
 function escalateConcerns_(concerns, user, source) {
   const valid = (concerns || []).filter(function (c) { return c && CATEGORIES.hasOwnProperty(c.category); });
   if (!valid.length) return [];
+  const lang = statusLanguage_(source.message);
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -1555,7 +1572,7 @@ function escalateConcerns_(concerns, user, source) {
           const isNew = t.sourceRefs[0].indexOf(prefix) === 0;
           return { ticketId: t.id, category: t.category, isNew: isNew, saved: true,
             delivered: isNew ? t.delivery !== 'Pending' && t.status !== 'New' : t.delivery.indexOf('Pending update') !== 0,
-            handoff: defaultHandoff_(t.category, !isNew), urgent: false };
+            handoff: defaultHandoff_(t.category, !isNew, lang), urgent: false };
         });
       }
     }
@@ -1582,7 +1599,7 @@ function escalateConcerns_(concerns, user, source) {
           const added = redactConcern_(related.category, concernTextFor_(c, source.message, valid.length));
           const ok = releaseHeld_(related, user, 'they still needed help', added, ref);
           results.push({ ticketId: related.id, category: related.category, isNew: true, saved: true, delivered: ok,
-            handoff: safeHandoff_(related.category, c.handoff, false), urgent: false });
+            handoff: safeHandoff_(related.category, c.handoff, false, lang), urgent: false });
           return;
         }
         if (related) {
@@ -1596,13 +1613,13 @@ function escalateConcerns_(concerns, user, source) {
           updated[related.id] = true;
           const r = addFollowUp_(related, text, user, ref, urgent);
           results.push({ ticketId: related.id, category: related.category, isNew: false, saved: true, delivered: r,
-            handoff: safeHandoff_(related.category, c.handoff, true), urgent: urgent });
+            handoff: safeHandoff_(related.category, c.handoff, true, lang), urgent: urgent });
         } else {
           const raw = sensitive ? SENSITIVE_TEXT : concernTextFor_(c, source.message, valid.length);
           const hold = !sensitive && wouldHold_(c);
           const t = createTicket_(c, raw, user, source, ref, earlier, hold);
           results.push({ ticketId: t.id, category: c.category, isNew: true, saved: true, delivered: t.delivered,
-            handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent,
+            handoff: safeHandoff_(c.category, c.handoff, false, lang), urgent: urgent,
             held: hold, offer: hold && !c.quiet ? safeOffer_(c.category, c.offer) : '' });
         }
       } catch (e) {
@@ -2146,11 +2163,15 @@ function statusText_(lang, key, values) {
  * What the person is told about one of their own concerns, worded strictly from the recorded
  * status: nobody is described as working on it unless the status is In Progress.
  */
+/** "Ms. Vergelyn from our HR team" -> "Ms. Vergelyn mula sa aming HR team" / "gikan sa among HR team". */
+function localWho_(who, lang) {
+  if (lang === 'tl') return who.replace(/ from our /, ' mula sa aming ').replace(/^our /, 'aming ').replace(/^the right person on our team$/, 'tamang tao sa aming team');
+  if (lang === 'ceb') return who.replace(/ from our /, ' gikan sa among ').replace(/^our /, 'among ').replace(/^the right person on our team$/, 'saktong tawo sa among team');
+  return who;
+}
+
 function statusLine_(t, lang) {
-  let who = teamNames_()[t.category] || 'our team';
-  // "Ms. Vergelyn from our HR team" -> "Ms. Vergelyn mula sa aming HR team" / "gikan sa among HR team".
-  if (lang === 'tl') who = who.replace(/ from our /, ' mula sa aming ').replace(/^our /, 'aming ');
-  if (lang === 'ceb') who = who.replace(/ from our /, ' gikan sa among ').replace(/^our /, 'among ');
+  const who = localWho_(teamNames_()[t.category] || 'our team', lang);
   const v = { who: who, Who: capitalise_(who), date: shortDate_(t.created) };
   switch (t.status) {
     case 'Assigned': return statusText_(lang, 'assigned', v);
@@ -3294,6 +3315,7 @@ function composeReply_(decision, status, results, options) {
   if (options && options.ongoing) own = stripOpeningGreeting_(own, options.firstName);
   // A sentence glued to the previous one ("sultihi lang ko.Naa ra ko") gets its space back.
   own = own.replace(/([a-z\u00C0-\u024F]{2}[.!?])([A-Z][a-z])/g, '$1 $2');
+  own = own.replace(/<br\s*\/?>/gi, '\n');
   // A stray bracket left at the end of the AI's text ("...sa HR.}") is dropped.
   own = own.replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
   let placed = false;
@@ -3745,7 +3767,7 @@ function runLanguageEval() {
           const followUp = related !== 'NEW' && !(c.tickets || []).some(function (k) { return EVAL_TICKETS[k].waiting && EVAL_TICKETS[k].id === related; });
           const held = !followUp && related === 'NEW' && x.sensitive_personal !== true && wouldHold_(x);
           return { saved: true, delivered: !held, held: held, offer: held ? safeOffer_(x.category, x.offer) : '',
-            handoff: safeHandoff_(x.category, x.handoff, followUp), urgent: x.urgent_safety === true, category: x.category };
+            handoff: safeHandoff_(x.category, x.handoff, followUp, statusLanguage_(c.text)), urgent: x.urgent_safety === true, category: x.category };
         }), { inDm: true });
         const shownProblems = evalShownProblems_(c, d);
         problems = problems.concat(shownProblems);
@@ -3789,7 +3811,7 @@ function runLanguageEval() {
       'Shown To VA': d.shown || '',
     });
   }
-  const summary = passed + '/' + ran + ' cases passed, estimated cost $' + spent.toFixed(4) + ' (model ' + getProp_('CLAUDE_MODEL') + ').';
+  const summary = passed + '/' + ran + ' cases passed, estimated cost $' + spent.toFixed(4) + ' (model ' + getProp_('CLAUDE_MODEL') + (getProp_('FILIPINO_MODEL') ? '; Tagalog/Bisaya: ' + getProp_('FILIPINO_MODEL') : '') + ').';
   appendObject_(EVAL_SHEET, { 'Time': new Date(), 'Case': 'TOTAL', 'Result': passed === ran ? 'PASS' : 'CHECK', 'Problems': summary,
     'Cost USD': Math.round(spent * 1e5) / 1e5 });
   console.log(summary + ' Details: the "Eval Results" tab of the control sheet.');
@@ -3900,6 +3922,9 @@ function evalShownProblems_(c, d) {
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
   if (/\b(?:not your fault|you did nothing wrong|wala kay sala|wala kay kasaypanan|hindi mo kasalanan|wala kang kasalanan)\b/i.test(shown)) p.push('takes sides (says it is not their fault)');
   if (/\b(?:dawaton tika|mahimo nako tabangan nimo|mag-antos na usab)\b/i.test(shown)) p.push('Bisaya phrase INAVA corrected');
+  if (!c.persona && /\b(?:delegate!|favou?rite (?:word|colou?r))/i.test(shown)) p.push('personality chatter in a work answer');
+  if ((shown.match(/Kung naay mausab o updates/g) || []).length && !(d.concerns || []).length) p.push('note: "Kung naay mausab o updates" used without a concern');
+  if (/<br\s*\/?>/i.test(shown)) p.push('HTML tag in the reply');
   if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|per (?:our|the) (?:\w+ )?(?:faq|handbook|policy)|(?:our|the) (?:\w+ )?faq (?:says|lists|states)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
     p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
@@ -3913,8 +3938,8 @@ function evalShownProblems_(c, d) {
   });
   if (c.status && EVAL_TICKETS[c.status]) {
     const rec = evalTicketRecords_([c.status])[0];
-    if (shown !== statusLine_(rec)) p.push('status answer is not exactly the recorded status');
+    if (shown !== statusLine_(rec, statusLanguage_(c.text))) p.push('status answer is not exactly the recorded status');
   }
-  if (c.status === 'AMBIGUOUS' && d.intent === 'STATUS_REQUEST' && !/Which one do you mean\?/.test(shown)) p.push('did not ask which concern');
+  if (c.status === 'AMBIGUOUS' && d.intent === 'STATUS_REQUEST' && !/Which one do you mean\?|Alin ang tinutukoy mo\?|Asa ang imong pasabot\?/.test(shown)) p.push('did not ask which concern');
   return p;
 }

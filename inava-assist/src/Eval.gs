@@ -146,7 +146,7 @@ function runLanguageEval() {
           const followUp = related !== 'NEW' && !(c.tickets || []).some(function (k) { return EVAL_TICKETS[k].waiting && EVAL_TICKETS[k].id === related; });
           const held = !followUp && related === 'NEW' && x.sensitive_personal !== true && wouldHold_(x);
           return { saved: true, delivered: !held, held: held, offer: held ? safeOffer_(x.category, x.offer) : '',
-            handoff: safeHandoff_(x.category, x.handoff, followUp), urgent: x.urgent_safety === true, category: x.category };
+            handoff: safeHandoff_(x.category, x.handoff, followUp, statusLanguage_(c.text)), urgent: x.urgent_safety === true, category: x.category };
         }), { inDm: true });
         const shownProblems = evalShownProblems_(c, d);
         problems = problems.concat(shownProblems);
@@ -190,7 +190,7 @@ function runLanguageEval() {
       'Shown To VA': d.shown || '',
     });
   }
-  const summary = passed + '/' + ran + ' cases passed, estimated cost $' + spent.toFixed(4) + ' (model ' + getProp_('CLAUDE_MODEL') + ').';
+  const summary = passed + '/' + ran + ' cases passed, estimated cost $' + spent.toFixed(4) + ' (model ' + getProp_('CLAUDE_MODEL') + (getProp_('FILIPINO_MODEL') ? '; Tagalog/Bisaya: ' + getProp_('FILIPINO_MODEL') : '') + ').';
   appendObject_(EVAL_SHEET, { 'Time': new Date(), 'Case': 'TOTAL', 'Result': passed === ran ? 'PASS' : 'CHECK', 'Problems': summary,
     'Cost USD': Math.round(spent * 1e5) / 1e5 });
   console.log(summary + ' Details: the "Eval Results" tab of the control sheet.');
@@ -301,6 +301,9 @@ function evalShownProblems_(c, d) {
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
   if (/\b(?:not your fault|you did nothing wrong|wala kay sala|wala kay kasaypanan|hindi mo kasalanan|wala kang kasalanan)\b/i.test(shown)) p.push('takes sides (says it is not their fault)');
   if (/\b(?:dawaton tika|mahimo nako tabangan nimo|mag-antos na usab)\b/i.test(shown)) p.push('Bisaya phrase INAVA corrected');
+  if (!c.persona && /\b(?:delegate!|favou?rite (?:word|colou?r))/i.test(shown)) p.push('personality chatter in a work answer');
+  if ((shown.match(/Kung naay mausab o updates/g) || []).length && !(d.concerns || []).length) p.push('note: "Kung naay mausab o updates" used without a concern');
+  if (/<br\s*\/?>/i.test(shown)) p.push('HTML tag in the reply');
   if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|per (?:our|the) (?:\w+ )?(?:faq|handbook|policy)|(?:our|the) (?:\w+ )?faq (?:says|lists|states)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
     p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
@@ -314,8 +317,8 @@ function evalShownProblems_(c, d) {
   });
   if (c.status && EVAL_TICKETS[c.status]) {
     const rec = evalTicketRecords_([c.status])[0];
-    if (shown !== statusLine_(rec)) p.push('status answer is not exactly the recorded status');
+    if (shown !== statusLine_(rec, statusLanguage_(c.text))) p.push('status answer is not exactly the recorded status');
   }
-  if (c.status === 'AMBIGUOUS' && d.intent === 'STATUS_REQUEST' && !/Which one do you mean\?/.test(shown)) p.push('did not ask which concern');
+  if (c.status === 'AMBIGUOUS' && d.intent === 'STATUS_REQUEST' && !/Which one do you mean\?|Alin ang tinutukoy mo\?|Asa ang imong pasabot\?/.test(shown)) p.push('did not ask which concern');
   return p;
 }

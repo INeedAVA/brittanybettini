@@ -1192,8 +1192,11 @@ test('payroll: handled internally by its assignee, but VAs only ever hear "our P
     reply: 'I\'m sorry your pay is late. Verge handles payroll, so she will sort it out. Please don\'t share bank details here.\n\n[HANDOFF]',
     concerns: [concern({ category: 'PAYROLL', priority: 'HIGH', handoff: 'I\'ve passed this to Ms. Vergelyn, who handles payroll.' })] }));
   let r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Wala pa akong sahod ngayong cutoff'));
+  // Asked in Tagalog: the system's handoff line is in Tagalog too, and still names only the Payroll Team.
   assert.strictEqual(r.text, 'I\'m sorry your pay is late. Please don\'t share bank details here.\n\n' +
-    'I\'ve forwarded your concern to our Payroll Team for review.');
+    'Naipasa ko na ito sa aming Payroll Team para ma-review.');
+  assert.strictEqual(env.ctx.defaultHandoff_('PAYROLL', false, 'ceb'), 'Gipasa na nako ni sa among Payroll Team para ma-review.');
+  assert.strictEqual(env.ctx.defaultHandoff_('PAYROLL', false, 'en'), 'I\'ve forwarded your concern to our Payroll Team for review.');
   const t = ticketRows(env)[0];
   assert.strictEqual(t['Assignee Email'], 'verge@inava.test');
   assert.strictEqual(t['Assignee Name'], 'our Payroll Team');
@@ -1788,6 +1791,18 @@ test('round 11: a stray bracket at the end of the AI text is removed', () => {
   claudeReturns(env, answer({ intent: 'QUESTION', reply: 'Kung gusto mo, tulungan kita i-draft ang request mo sa HR.}' }));
   const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Paano mag-file ng leave?')));
   assert.match(r, /request mo sa HR\.$/);
+});
+
+test('round 12: <br> tags become line breaks; FILIPINO_MODEL is used only for Tagalog and Bisaya', () => {
+  const env = setupEnv();
+  claudeReturns(env, answer({ intent: 'CASUAL', reply: 'Good morning din po!<br>Ano ang maitutulong ko?' }));
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Hi! Good morning po')));
+  assert.strictEqual(r, 'Good morning din po!\nAno ang maitutulong ko?');
+  assert.strictEqual(env.ctx.modelFor_('Wala pa akong sahod'), 'claude-haiku-5-5');
+  env.props.FILIPINO_MODEL = 'claude-sonnet-5-5';
+  assert.strictEqual(env.ctx.modelFor_('Wala pa akong sahod ngayong cutoff'), 'claude-sonnet-5-5');
+  assert.strictEqual(env.ctx.modelFor_('Unsaon nako pag-file og leave?'), 'claude-sonnet-5-5');
+  assert.strictEqual(env.ctx.modelFor_('How do I file leave?'), 'claude-haiku-5-5');
 });
 
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
