@@ -225,7 +225,8 @@ const SENSITIVE_TEXT = 'Sensitive personal safety concern. Please contact this V
 function safeHandoff_(category, text, isFollowUp, lang) {
   const h = trimPromise_(String(text || '').trim());
   if (!h) return defaultHandoff_(category, isFollowUp, lang);
-  if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp, lang);
+  // Pay: always the system's own line ("our Payroll Team", never a name, in the VA's language).
+  if (category === 'PAYROLL') return defaultHandoff_(category, isFollowUp, lang);
   return h;
 }
 

@@ -464,6 +464,11 @@ function composeReply_(decision, status, results, options) {
   // A sentence glued to the previous one ("sultihi lang ko.Naa ra ko") gets its space back.
   own = own.replace(/([a-z\u00C0-\u024F]{2}[.!?])([A-Z][a-z])/g, '$1 $2');
   own = own.replace(/<br\s*\/?>/gi, '\n');
+  // Small talk stays short: a runaway casual reply is cut to its first 3 sentences.
+  if (decision.intent === 'CASUAL') {
+    const sentences = own.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]+[\s\u2728\u{1F9E1}]*/gu) || [];
+    if (sentences.length > 3) own = sentences.slice(0, 3).join('').trim();
+  }
   // A stray bracket left at the end of the AI's text ("...sa HR.}") is dropped.
   own = own.replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
   let placed = false;

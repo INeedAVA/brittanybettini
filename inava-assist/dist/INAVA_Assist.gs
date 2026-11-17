@@ -671,6 +671,7 @@ const SYSTEM_PROMPT = [
   '- Talk like a helpful, friendly colleague. People should feel they are being looked after, not filing a form. Never mention tickets, ticket numbers, categories, priorities or any internal system.',
   '- Your personality: your name is Ask INAVA, and people may call you Ava. You use she/her. You are warm, calm under pressure and a little witty.',
   '- About yourself, if someone asks or makes small talk: your favourite colour is INAVA orange 🧡, your favourite word is "delegate", you speak English, Tagalog and Bisaya, you went live on October 28, 2026 (your "birthday"), and you love a clean inbox and an on-time TCW clock-in. Share one or two of these lightly, and only when they ask about you or make small talk; never list them all. Never mention your favourite word, colour or other personal facts in an answer about work, a policy or a problem. Say your favourite word with a playful, confident twist (for example "Delegate! Very on-brand, I know." or "Easy: delegate. It solves half of life\'s problems."). Never swear or use rude words in any language, even as a joke.',
+  '- Small talk (CASUAL) gets one to three short sentences, never more.',
   '- A light joke is welcome in casual chat. In serious matters (pay problems, mistreatment, harassment, safety, complaints, anything sensitive) no jokes and no personality chatter: calm and professional.',
   '- You have no body, family, age or relationships. If asked, answer playfully but honestly that you are an AI.',
   '',
@@ -777,6 +778,7 @@ const SYSTEM_PROMPT = [
   '- In Bisaya, "you\'re welcome" is "Walay sapayan" ("Walang anuman" is Tagalog). To say "that must feel awful" use "Lisod gyud na" or "Sakit gyud na para nimo", not "Sayop gyud kaayo na mabati" (which sounds wrong). In every language, do not open with "according to the handbook" ("Sumala sa handbook", "Ayon sa handbook"): just give the information.',
   '- Stay supportive but neutral about fault: you only hear one side. Never say "it\'s not your fault", "you did nothing wrong", "wala kay sala" or "hindi mo kasalanan". Acknowledge how it felt and help them with next steps instead.',
   '- When you advise them not to agree to something yet (for example unpaid extra work), say plainly what and why, and that the team decides it, so it never sounds like you are telling them to refuse their work (Bisaya: "Ayaw sa una pag-uyon nga motrabaho sa Sabado nga walay bayad. Ang Client Care team ang modesisyon niini.").',
+  '- The Bisaya phrases in these rules are for Bisaya replies only. In a Tagalog reply never use Bisaya words (tabangan, tika, gyud, nimo, samtang, naghulat, kung unsa); the Tagalog offer is "Kung gusto mo, tutulungan kitang sumulat ng mahinahong sagot sa client."',
   '- Bisaya corrections from INAVA: to offer help say "Kung gusto nimo, tabangan tika pagsulat og kalmado nga tubag" (not "mahimo nako tabangan nimo", and never "dawaton tika"); to invite updates say "Kung naay mausab o updates, sultihi lang ko" (not "mag-antos na usab"), but only after a concern was passed on or is waiting, not in every reply; "don\'t worry" is "Ayaw kabalaka" (not "Dili ka kabalaka"). Never write HTML tags such as <br>.',
   '- More Bisaya to get right: to apologise to someone is "mangayo og pasaylo" (not "pasayloa siya", which means forgive him); unpaid work is "walay bayad" (not "libre", which can mean a day off); avoid "Ikaw bahala" when supporting someone, it sounds like "up to you, not my problem".',
   '- Greetings: follow "Conversation" in the request. In an ongoing conversation never open with a greeting or their name. Even in a new one, use their name at most once, not in every message.',
@@ -1056,8 +1058,9 @@ function wrongLanguage_(message, decision) {
   const c = languageCounts_(text);
   if (c.words < 8) return false; // too short to judge (or a status answer with no reply)
   if (c.tl + c.ceb === 0 && c.en >= 5) return true; // all English
-  if (/^Bisaya/.test(want)) return c.ceb === 0 && c.tl >= 3; // Tagalog instead of Bisaya
-  return c.tl === 0 && c.ceb >= 3; // Bisaya instead of Tagalog
+  // Tagalog instead of Bisaya, or a reply that is mostly the other language (mixed, not just a loan word).
+  if (/^Bisaya/.test(want)) return c.tl >= 3 && c.tl * 2 >= c.ceb && (c.ceb === 0 || c.tl > c.ceb);
+  return c.ceb >= 3 && c.ceb * 2 >= c.tl;
 }
 
 // ---- Short conversation memory (per person, per space, 6 hours) ----
@@ -1492,7 +1495,8 @@ const SENSITIVE_TEXT = 'Sensitive personal safety concern. Please contact this V
 function safeHandoff_(category, text, isFollowUp, lang) {
   const h = trimPromise_(String(text || '').trim());
   if (!h) return defaultHandoff_(category, isFollowUp, lang);
-  if (category === 'PAYROLL' && (!/payroll/i.test(h) || namesTeamMember_(h))) return defaultHandoff_(category, isFollowUp, lang);
+  // Pay: always the system's own line ("our Payroll Team", never a name, in the VA's language).
+  if (category === 'PAYROLL') return defaultHandoff_(category, isFollowUp, lang);
   return h;
 }
 
@@ -3316,6 +3320,11 @@ function composeReply_(decision, status, results, options) {
   // A sentence glued to the previous one ("sultihi lang ko.Naa ra ko") gets its space back.
   own = own.replace(/([a-z\u00C0-\u024F]{2}[.!?])([A-Z][a-z])/g, '$1 $2');
   own = own.replace(/<br\s*\/?>/gi, '\n');
+  // Small talk stays short: a runaway casual reply is cut to its first 3 sentences.
+  if (decision.intent === 'CASUAL') {
+    const sentences = own.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]+[\s\u2728\u{1F9E1}]*/gu) || [];
+    if (sentences.length > 3) own = sentences.slice(0, 3).join('').trim();
+  }
   // A stray bracket left at the end of the AI's text ("...sa HR.}") is dropped.
   own = own.replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
   let placed = false;

@@ -704,7 +704,7 @@ test('Bisaya and Tagalog concerns are recorded word for word, reply in their lan
     concerns: [concern({ category: 'PAYROLL', priority: 'URGENT', handoff: 'Ipinasa ko na ito sa aming Payroll Team.' })] }));
   r = env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Wala pa akong sahod for this cutoff, ₱8,500 dapat'));
   // The AI's own claim is removed from the caring part; the handoff is added after delivery.
-  assert.strictEqual(r.text, 'Naiintindihan kita, nakakabahala talaga \'yan.\n\nIpinasa ko na ito sa aming Payroll Team.');
+  assert.strictEqual(r.text, 'Naiintindihan kita, nakakabahala talaga \'yan.\n\nNaipasa ko na ito sa aming Payroll Team para ma-review.');
   const rows = ticketRows(env);
   assert.strictEqual(rows[0].Summary, 'Nasuko akong client kay late ko nakareply, unsa man akong buhaton?');
   assert.strictEqual(rows[1].Summary, 'Wala pa akong sahod for this cutoff, [amount removed] dapat');
@@ -1803,6 +1803,18 @@ test('round 12: <br> tags become line breaks; FILIPINO_MODEL is used only for Ta
   assert.strictEqual(env.ctx.modelFor_('Wala pa akong sahod ngayong cutoff'), 'claude-sonnet-5-5');
   assert.strictEqual(env.ctx.modelFor_('Unsaon nako pag-file og leave?'), 'claude-sonnet-5-5');
   assert.strictEqual(env.ctx.modelFor_('How do I file leave?'), 'claude-haiku-5-5');
+});
+
+test('round 13: Bisaya in a Tagalog reply triggers the retry; casual replies stay short; pay handoff is always the system line', () => {
+  const env = setupEnv();
+  const d = { reply: 'Eval, pasensya na, nakakabigla gyud kung masigawan ka sa client mo. Samtang naghulat ka, isulat lang ang nahitabo. Kung gusto nimo, tabangan tika.', concerns: [] };
+  assert.strictEqual(env.ctx.wrongLanguage_('Sinigawan ako ng client ko kanina sa meeting, ang sakit lang.', d), true);
+  assert.strictEqual(env.ctx.wrongLanguage_('Sinigawan ako ng client ko kanina sa meeting, ang sakit lang.',
+    { reply: 'Ang sakit naman niyan. Isulat mo ang nangyari habang sariwa pa. Kung gusto mo, tutulungan kitang sumulat ng sagot.', concerns: [] }), false);
+  claudeReturns(env, answer({ intent: 'CASUAL', reply: 'Lisod gyud na. Salamat sa pagsulti nako. Kaya nimo na. Ayaw kalimti og pahulay. Maayong gabii. Ingna lang ko.' }));
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Grabe ka-stress ang client today, pero okay ra')));
+  assert.strictEqual(r, 'Lisod gyud na. Salamat sa pagsulti nako. Kaya nimo na.');
+  assert.strictEqual(env.ctx.safeHandoff_('PAYROLL', 'Naipasa ko na ito kay ang Payroll Team.', false, 'tl'), 'Naipasa ko na ito sa aming Payroll Team para ma-review.');
 });
 
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
