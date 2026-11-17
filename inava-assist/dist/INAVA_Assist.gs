@@ -3236,6 +3236,8 @@ function composeReply_(decision, status, results, options) {
   if (options && options.ongoing) own = stripOpeningGreeting_(own, options.firstName);
   // A sentence glued to the previous one ("sultihi lang ko.Naa ra ko") gets its space back.
   own = own.replace(/([a-z\u00C0-\u024F]{2}[.!?])([A-Z][a-z])/g, '$1 $2');
+  // A stray bracket left at the end of the AI's text ("...sa HR.}") is dropped.
+  own = own.replace(/\s*[{}]+\s*$/, '').replace(/^\s*[{}]+\s*/, '');
   let placed = false;
   if (own.search(HANDOFF_MARKER) >= 0) {
     let first = true;

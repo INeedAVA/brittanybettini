@@ -1778,6 +1778,13 @@ test('round 10: "the folder is shared with your account" is advice, not a handof
   assert.match(env.ctx.replyLanguage_('Walay sapayan, Eval! Nalipay ko nga nakatabang ko. Kung naay laing pangutana bahin sa trabaho, sultihi lang ko.'), /^Bisaya/);
 });
 
+test('round 11: a stray bracket at the end of the AI text is removed', () => {
+  const env = setupEnv();
+  claudeReturns(env, answer({ intent: 'QUESTION', reply: 'Kung gusto mo, tulungan kita i-draft ang request mo sa HR.}' }));
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Paano mag-file ng leave?')));
+  assert.match(r, /request mo sa HR\.$/);
+});
+
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {
   const env = withInbox(setupEnv());
   claudeReturns(env, answer({ intent: 'CONCERN', reply: 'Try resetting your TCW password.\n\n[HANDOFF]', concerns: [toolConcern()] }));
