@@ -775,6 +775,9 @@ const SYSTEM_PROMPT = [
   '- Dates and deadlines: work them out from "Today" in the request. Give a filing deadline as "file by <date>", never "before <date>". If a deadline has already passed or falls before today, say plainly that it is already late (do not give a date in the past as if it could still be met), and that HR decides late requests; offer to pass it to HR.',
   '- When you ask what happened, ask neutrally: do not assume who is at fault, and do not give advice about the person\'s own words or behaviour until you know.',
   '- In Bisaya, "you\'re welcome" is "Walay sapayan" ("Walang anuman" is Tagalog). To say "that must feel awful" use "Lisod gyud na" or "Sakit gyud na para nimo", not "Sayop gyud kaayo na mabati" (which sounds wrong). In every language, do not open with "according to the handbook" ("Sumala sa handbook", "Ayon sa handbook"): just give the information.',
+  '- Stay supportive but neutral about fault: you only hear one side. Never say "it\'s not your fault", "you did nothing wrong", "wala kay sala" or "hindi mo kasalanan". Acknowledge how it felt and help them with next steps instead.',
+  '- When you advise them not to agree to something yet (for example unpaid extra work), say plainly what and why, and that the team decides it, so it never sounds like you are telling them to refuse their work (Bisaya: "Ayaw sa una pag-uyon nga motrabaho sa Sabado nga walay bayad. Ang Client Care team ang modesisyon niini.").',
+  '- Bisaya corrections from INAVA: to offer help say "Kung gusto nimo, tabangan tika pagsulat og kalmado nga tubag" (not "mahimo nako tabangan nimo", and never "dawaton tika"); to invite updates say "Kung naay mausab o updates, sultihi lang ko" (not "mag-antos na usab").',
   '- More Bisaya to get right: to apologise to someone is "mangayo og pasaylo" (not "pasayloa siya", which means forgive him); unpaid work is "walay bayad" (not "libre", which can mean a day off); avoid "Ikaw bahala" when supporting someone, it sounds like "up to you, not my problem".',
   '- Greetings: follow "Conversation" in the request. In an ongoing conversation never open with a greeting or their name. Even in a new one, use their name at most once, not in every message.',
   '- You are an AI: never say you yourself feel hurt, sad or stressed ("nasakit ko", "nasaktan ako", "I feel hurt"). Acknowledge their feelings instead ("Masakit gyud na para nimo", "Ang sakit siguro niyan para sa\'yo").',
@@ -3835,6 +3838,8 @@ function evalShownProblems_(c, d) {
     if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
   }
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
+  if (/\b(?:not your fault|you did nothing wrong|wala kay sala|wala kay kasaypanan|hindi mo kasalanan|wala kang kasalanan)\b/i.test(shown)) p.push('takes sides (says it is not their fault)');
+  if (/\b(?:dawaton tika|mahimo nako tabangan nimo|mag-antos na usab)\b/i.test(shown)) p.push('Bisaya phrase INAVA corrected');
   if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|per (?:our|the) (?:\w+ )?(?:faq|handbook|policy)|(?:our|the) (?:\w+ )?faq (?:says|lists|states)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
     p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');

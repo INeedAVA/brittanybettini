@@ -299,6 +299,8 @@ function evalShownProblems_(c, d) {
     if (!/\bHR\b/.test(shown)) p.push('late leave: no referral to HR');
   }
   if (/[a-z]{2}[.!?][A-Z][a-z]/.test(shown)) p.push('missing space between sentences');
+  if (/\b(?:not your fault|you did nothing wrong|wala kay sala|wala kay kasaypanan|hindi mo kasalanan|wala kang kasalanan)\b/i.test(shown)) p.push('takes sides (says it is not their fault)');
+  if (/\b(?:dawaton tika|mahimo nako tabangan nimo|mag-antos na usab)\b/i.test(shown)) p.push('Bisaya phrase INAVA corrected');
   if (/\b(according to (?:the|our) (?:handbook|documents?|policy)|(?:sumala|ayon) sa (?:handbook|policy)|per (?:our|the) (?:\w+ )?(?:faq|handbook|policy)|(?:our|the) (?:\w+ )?faq (?:says|lists|states)|the handbook (?:says|states)|based on (?:our|the) approved documents?|approved documents?|knowledge base)\b/i.test(shown))
     p.push('note: sounds robotic (cites the handbook or documents)');
   if (/\bbefore\s+(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d/i.test(shown) || /\bbago ang (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(shown)) p.push('note: deadline given as "before" a date');
