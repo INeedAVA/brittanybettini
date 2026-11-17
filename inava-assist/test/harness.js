@@ -111,6 +111,8 @@ function createEnv() {
       getScriptProperties: () => ({
         getProperty: (k) => (k in props ? props[k] : null),
         setProperty: (k, v) => { props[k] = String(v); },
+        getProperties: () => Object.assign({}, props),
+        deleteProperty: (k) => { delete props[k]; },
       }),
     },
     CacheService: {
@@ -172,6 +174,9 @@ function createEnv() {
         if (fmt === 'yyyy-MM-dd HH:mm') return iso.slice(0, 10) + ' ' + iso.slice(11, 16);
         if (fmt === 'd MMM') return String(d.getUTCDate()) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
         if (fmt === 'u') return ctx.__weekday || '3';
+        if (fmt === 'd') return ctx.__monthDay || String(d.getUTCDate());
+        if (fmt === 'yyyy-MM') return iso.slice(0, 7);
+        if (fmt === 'yyyy-MM-dd') return iso.slice(0, 10);
         return iso;
       },
       parseDate: (text) => new Date(text.replace(' ', 'T') + 'Z'),

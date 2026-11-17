@@ -346,7 +346,7 @@ function escalateConcerns_(concerns, user, source) {
           const t = createTicket_(c, raw, user, source, ref, earlier, hold);
           results.push({ ticketId: t.id, category: c.category, isNew: true, saved: true, delivered: t.delivered,
             handoff: safeHandoff_(c.category, c.handoff, false), urgent: urgent,
-            held: hold, offer: hold ? safeOffer_(c.category, c.offer) : '' });
+            held: hold, offer: hold && !c.quiet ? safeOffer_(c.category, c.offer) : '' });
         }
       } catch (e) {
         console.error('Could not record a concern: ' + e);
@@ -1131,4 +1131,46 @@ function sendCheckIn_(t) {
     console.error('Check-in for ' + t.id + ' could not be sent: ' + e);
     return false;
   }
+}
+
+// ---- Off-topic use (client work, research, general knowledge) ----
+
+/**
+ * Counts one off-topic request for this person today. When the count reaches OFF_TOPIC_ALERT_AFTER,
+ * the team inbox gets ONE heads-up card for that person and day (a fixed Chat message ID, so
+ * it is never posted twice). Without a team inbox it goes privately to the Operations contact.
+ */
+function noteOffTopic_(user, text, spaceId) {
+  const limit = Number(getProp_('OFF_TOPIC_ALERT_AFTER'));
+  const day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const key = 'offtopic:' + day + ':' + user.email;
+  const props = PropertiesService.getScriptProperties();
+  const count = Number(props.getProperty(key) || 0) + 1;
+  props.setProperty(key, String(count));
+  audit_({ email: user.email, role: user.role, space: spaceId, action: 'OFF_TOPIC', detail: count + ' today' });
+  if (!limit || count !== limit) return;
+  const sample = redactSensitive_(redactCredentials_(String(text || '').replace(/\s+/g, ' ').trim()));
+  const body = 'Name: ' + user.name + '\n\n' + count + ' requests today that were not about INAVA. Latest: "' +
+    (sample.length > 140 ? sample.slice(0, 137) + '...' : sample) + '"';
+  const messageId = clientMessageId_('offtopic-' + day + '-' + shortHash_(user.email));
+  try {
+    const space = teamInbox_();
+    if (space) postCard_(space, 'Heads up: off-topic use', body, messageId);
+    else {
+      const ops = getRouting_('OPERATIONS');
+      if (ops && ops.email) sendPrivateMessage_(ops.email, boldHeading_('Heads up: off-topic use\n\n' + body), messageId);
+    }
+    audit_({ email: user.email, role: user.role, space: spaceId, action: 'OFF_TOPIC_ALERT', detail: count + ' today' });
+  } catch (e) {
+    console.error('Off-topic alert failed: ' + e);
+  }
+}
+
+/** Removes off-topic counts from earlier days (run daily by dailyMorning). */
+function clearOldOffTopicCounts_() {
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const props = PropertiesService.getScriptProperties();
+  Object.keys(props.getProperties()).forEach(function (k) {
+    if (k.indexOf('offtopic:') === 0 && k.indexOf('offtopic:' + today + ':') !== 0) props.deleteProperty(k);
+  });
 }

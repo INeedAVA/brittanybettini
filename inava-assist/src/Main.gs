@@ -167,8 +167,16 @@ function handleMessage_(ev, messageKey) {
     return 'Sorry, I can\'t help with that one. If it\'s something the INAVA team should look at, just say "please pass this to someone" and I\'ll let the right person know.' + aiFooter_();
   }
 
-  // No ticket before a clarifying answer, and none for small talk.
-  const concerns = decision.intent === 'CLARIFY' || decision.intent === 'CASUAL' ? [] : decision.concerns;
+  // No ticket before a clarifying answer, none for small talk, none for off-topic requests.
+  const offTopic = decision.off_topic === true;
+  let concerns = decision.intent === 'CLARIFY' || decision.intent === 'CASUAL' || offTopic ? [] : decision.concerns;
+  // "Something isn't working" and the AI gave steps: wait and check in, like a held concern.
+  const problemCheckIn = String(decision.problem_check_in || '').trim();
+  if (!offTopic && decision.intent === 'QUESTION' && problemCheckIn && !(concerns || []).length) {
+    concerns = [{ category: 'OPERATIONS', priority: 'NORMAL', concern_text: '', related_ticket: 'NEW', urgent_safety: false,
+      sensitive_personal: false, can_resolve_here: true, quiet: true, offer: '', check_in: problemCheckIn, handoff: '',
+      recommended_action: 'Ask INAVA suggested steps; help ' + user.name + ' with this problem if they still need it.' }];
+  }
   const results = escalateConcerns_(concerns, user, {
     spaceId: ev.space.name,
     spaceName: ev.space.displayName,
@@ -183,6 +191,7 @@ function handleMessage_(ev, messageKey) {
     results.map(function (r) { return String(r.ticketId || '').toUpperCase(); }));
   // A concern waiting on them waits 15 minutes from their latest message, not from the first one.
   touchWaiting_(ownTickets.filter(function (t) { return sorted.indexOf(t.id) < 0; }));
+  if (offTopic) noteOffTopic_(user, safeText, ev.space.name);
   const which = String(decision.status_ticket || '').trim();
   const status = decision.intent === 'STATUS_REQUEST' || (which && which.toUpperCase() !== 'NONE')
     ? statusReply_(user, which || 'NONE', !ev.isDm, null, safeText) : '';
@@ -206,6 +215,7 @@ function handleMessage_(ev, messageKey) {
         (r.urgent ? ' urgent-safety' : '');
     }).join(', ') : '') +
       (sorted.length ? ' | sorted by VA: ' + sorted.join(' ') : '') +
+      (offTopic ? ' | off-topic' : '') +
       (cited.length ? ' | sources: ' + cited.join('; ') : '') +
       (decision.languageRetried ? ' | language retry' : '') +
       (decision.usage ? ' | ' + decision.usage : '') });

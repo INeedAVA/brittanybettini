@@ -100,6 +100,11 @@ const EVAL_CASES = [
   // Help first, then check: a tool problem the advice may fix waits for the VA (if it is a concern
   // at all); "it works now" closes it; "still not working" passes it on.
   { lang: 'English', text: 'I can\'t clock in on TCW this morning, it keeps saying my login is invalid. What should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
+  // Something blocking work that the AI can help fix: a check-in either way (held concern or problem_check_in).
+  { lang: 'English', text: 'Google Drive won\'t let me open my client\'s folder, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
+  // Client work and general research are declined politely (off_topic); short client-communication help is not.
+  { lang: 'English', text: 'Can you research the top 10 competitors of my client\'s bakery in Austin and write a summary for me?', intent: ['QUESTION', 'CASUAL', 'CLARIFY'], n: [0, 0], offTopic: true },
+  { lang: 'Mixed', text: 'Pwede mo ko himoan og 5 Instagram captions para sa skincare launch sa akong client?', intent: ['QUESTION', 'CASUAL', 'CLARIFY'], n: [0, 0], offTopic: true },
   { lang: 'Bisaya', text: 'Okay na diay, maka-clock in na ko sa TCW. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
   { lang: 'English', text: 'I tried that but I still can\'t clock in on TCW. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
 ];
@@ -209,6 +214,11 @@ function evalProblems_(c, d) {
   if (lang && c.lang === 'English' && lang !== 'English') p.push('reply not in English (' + lang.split(',')[0] + ')');
   const held = concerns.filter(function (x) { return String(x.related_ticket || '').toUpperCase() === 'NEW' && x.sensitive_personal !== true && wouldHold_(x); });
   if (c.hold === true && concerns.length && !held.length) p.push('not held for a check-in (sent to the team at once)');
+  const checkIn = String(d.problem_check_in || '').trim();
+  if (c.hold === true && !concerns.length && !checkIn && d.off_topic !== true) p.push('no check-in for a "not working" problem');
+  if (checkIn && (c.policy || c.status || c.offTopic || c.n[0] >= 1)) p.push('check-in set on a message that should not get one');
+  if (c.offTopic === true && d.off_topic !== true) p.push('off-topic request not declined (off_topic false)');
+  if (c.offTopic !== true && d.off_topic === true) p.push('wrongly declined as off-topic');
   // A case that must reach the team (n[0] >= 1) must not wait; where a concern is optional, waiting is a note.
   if (c.hold !== true && held.length) p.push((c.n[0] >= 1 ? '' : 'note: ') + 'held for a check-in instead of passing on at once');
   if (held.some(function (x) { return !String(x.check_in || '').trim(); })) p.push('note: no check-in text (default used)');

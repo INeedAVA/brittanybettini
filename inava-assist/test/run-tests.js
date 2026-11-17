@@ -922,7 +922,7 @@ test('live language test: checks each case, writes results, never posts or creat
   assert.strictEqual(rows[0][0], 'Time');
   const total = rows[rows.length - 1];
   assert.strictEqual(total[1], 'TOTAL');
-  assert.match(total[11], /^\d+\/43 cases passed, estimated cost \$0\.0150/);
+  assert.match(total[11], /^\d+\/46 cases passed, estimated cost \$0\.0161/);
   assert.ok(rows.some((r) => r[10] === 'PASS') && rows.some((r) => r[10] === 'CHECK'));
   // A status case is answered by the real status code from the made-up record, not the AI's words.
   const statusRow = rows.find((r) => r[3] === 'Any update on my leave request?');
@@ -1562,6 +1562,102 @@ test('round 9: no "will be able to confirm" or "will follow up" promises about a
   assert.strictEqual(clean('Would you like me to ask Ms. Vergelyn from our HR team to confirm the details?'),
     'Would you like me to ask Ms. Vergelyn from our HR team to confirm the details?');
   assert.strictEqual(clean('Please also tell LJ what happened so it can be looked into.'), 'Please also tell LJ what happened so it can be looked into.');
+});
+
+test('monthly reminder: first Wednesday only, only spaces marked Monthly Reminder, once a month', () => {
+  const env = withInbox(setupEnv());
+  const spaces = env.sheet('Spaces');
+  spaces[0][8] = 'Morning Briefing';
+  spaces[0][9] = 'Monthly Reminder';
+  spaces.push(['spaces/announce', 'Announcements', 'YES', 'VA', '', toSerial(new Date()), '', '', '', 'YES']);
+  spaces.push(['spaces/internalteam', 'I Need A VA Internal Team', 'YES', 'VA', '', toSerial(new Date()), '', '', '', 'YES']);
+  spaces.push(['spaces/notyet', 'Not approved', 'NO', 'VA', '', toSerial(new Date()), '', '', '', 'YES']);
+  env.setClaude(() => ({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '💬 Quote' }] } }));
+  const reminders = () => env.sent.chat.filter((c) => c.body && c.body.text && /Questions about INAVA policies/.test(c.body.text));
+  env.ctx.__weekday = '3';
+  env.ctx.__monthDay = '9'; // second Wednesday
+  env.ctx.dailyMorning();
+  assert.strictEqual(reminders().length, 0);
+  env.ctx.__monthDay = '2'; // first Wednesday
+  env.ctx.dailyMorning();
+  const sent = reminders();
+  assert.deepStrictEqual(sent.map((c) => c.url.match(/spaces\/[^/]+/)[0]).sort(), ['spaces/announce', 'spaces/internalteam']);
+  assert.match(sent[0].body.text, /^Hi team! 👋 Questions about INAVA policies or a concern at work\? Just message me, Ask INAVA, anytime\. DM me for anything private\.$/);
+  // The same month's reminder uses a fixed message ID, so a re-run never posts it twice.
+  assert.ok(sent.every((c) => /messageId=client-reminder-/.test(c.url)));
+  const ids = sent.map((c) => c.url.match(/messageId=([^&]+)/)[1]);
+  env.ctx.postMonthlyReminder();
+  // Chat refuses a second message with the same ID, so nothing new appears.
+  assert.strictEqual(reminders().length, 2);
+  assert.strictEqual(new Set(ids).size, 2);
+  // Thursday: nothing.
+  env.ctx.__weekday = '4';
+  const n = reminders().length;
+  env.ctx.dailyMorning();
+  assert.strictEqual(reminders().length, n);
+  env.props.MONTHLY_REMINDER_TEXT = 'off';
+  env.ctx.postMonthlyReminder();
+  assert.strictEqual(reminders().length, n);
+});
+
+test('off-topic: declined, no ticket; the team inbox gets one heads-up at the 5th request of the day', () => {
+  const env = withInbox(setupEnv());
+  const out = answer({ intent: 'QUESTION', reply: 'I can only help with INAVA questions and concerns. For client tasks, please use your usual tools 😊',
+    concerns: [concern({ category: 'CLIENT_CARE' })] });
+  out.off_topic = true;
+  claudeReturns(env, out);
+  for (let i = 1; i <= 6; i++) {
+    const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Write 10 Instagram captions for my client bakery #' + i)));
+    assert.match(r, /only help with INAVA/);
+  }
+  assert.strictEqual(ticketRows(env).length, 0, 'no ticket for off-topic requests');
+  const alerts = inboxPosts(env).filter((c) => /OFF-TOPIC USE/.test(cardText(c)));
+  assert.strictEqual(alerts.length, 1, 'one alert per person per day');
+  assert.match(cardText(alerts[0]), /Name: Vicky VA<br><br>5 requests today that were not about INAVA\. Latest: "Write 10 Instagram captions for my client bakery #5"/);
+  assert.match(env.sheet('Audit Log').slice(-1)[0].join(' '), /off-topic/);
+  // Old counts are cleared by the daily job; today's stay.
+  env.props['offtopic:2020-01-01:va@inava.test'] = '3';
+  env.ctx.clearOldOffTopicCounts_();
+  assert.ok(!('offtopic:2020-01-01:va@inava.test' in env.props));
+  assert.ok(Object.keys(env.props).some((k) => k.indexOf('offtopic:') === 0));
+  // Switched off: no alert.
+  const env2 = withInbox(setupEnv());
+  env2.props.OFF_TOPIC_ALERT_AFTER = 'off';
+  claudeReturns(env2, out);
+  for (let i = 1; i <= 6; i++) env2.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'research #' + i));
+  assert.strictEqual(inboxPosts(env2).filter((c) => /OFF-TOPIC/.test(cardText(c))).length, 0);
+});
+
+test('problem check-in: a "not working" question waits quietly and gets a check-in; policy questions never do', () => {
+  const env = withInbox(setupEnv());
+  const out = answer({ intent: 'QUESTION', reply: 'Try signing in with the account your client shared it with. If it still won\'t open, tell me the exact message.' });
+  out.problem_check_in = 'Just checking in: were you able to open the folder? If not, I can pass it to Mabelle from our Operations team.';
+  claudeReturns(env, out);
+  const r = replyOf(env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'Google Drive won\'t let me open my client\'s folder, what should I do?')));
+  assert.doesNotMatch(r, /Did that help/, 'no extra offer line under a plain answer');
+  const row = ticketRows(env)[0];
+  assert.strictEqual(row.Status, 'Waiting on VA');
+  assert.strictEqual(row.Category, 'OPERATIONS');
+  assert.match(row.Summary, /Google Drive won't let me open/);
+  assert.strictEqual(inboxPosts(env).length, 0);
+  setCell(env, row['Ticket ID'], 'Waiting Since', minutesAgo(16));
+  env.ctx.checkWaitingConcerns();
+  const dm = env.sent.chat.filter((c) => c.url.indexOf('spaces/dm-u6/messages') >= 0);
+  assert.strictEqual(dm.length, 1);
+  assert.match(dm[0].body.text, /were you able to open the folder/);
+  // A policy question with no check-in text: nothing is created.
+  const env2 = withInbox(setupEnv());
+  claudeReturns(env2, answer({ intent: 'QUESTION', reply: 'File leave at least 2 weeks ahead.' }));
+  env2.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'How many days ahead do I file leave?'));
+  assert.strictEqual(ticketRows(env2).length, 0);
+  // Off-topic wins: no check-in for a declined request.
+  const env3 = withInbox(setupEnv());
+  const o3 = answer({ intent: 'QUESTION', reply: 'I can only help with INAVA questions.' });
+  o3.off_topic = true;
+  o3.problem_check_in = 'Checking in';
+  claudeReturns(env3, o3);
+  env3.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client website code is broken, fix it'));
+  assert.strictEqual(ticketRows(env3).length, 0);
 });
 
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {

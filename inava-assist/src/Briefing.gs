@@ -39,6 +39,17 @@ function dailyMorning() {
     console.error('Morning briefing failed: ' + e);
   }
   try {
+    // First Wednesday of the month only (does nothing on other days).
+    if (day === '3' && Number(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd')) <= 7) postMonthlyReminder();
+  } catch (e) {
+    console.error('Monthly reminder failed: ' + e);
+  }
+  try {
+    clearOldOffTopicCounts_();
+  } catch (e) {
+    console.error('Clearing off-topic counts failed: ' + e);
+  }
+  try {
     // Concerns that were saved but never reached the team chat (does nothing when there are none).
     retryUndeliveredConcerns();
   } catch (e) {
@@ -148,4 +159,28 @@ function loadBriefingHistory_() {
 function saveBriefingHistory_(history, date, text) {
   const h = history.concat([{ date: date, text: text }]).slice(-BRIEFING_HISTORY_DAYS);
   setProp_('BRIEFING_HISTORY', JSON.stringify(h));
+}
+
+/**
+ * Posts MONTHLY_REMINDER_TEXT in every approved space with Monthly Reminder = YES. dailyMorning
+ * calls it on the first Wednesday of the month; run it by hand to post it now. Each space gets it
+ * at most once a month, however often this runs.
+ */
+function postMonthlyReminder() {
+  resetMemo_();
+  ensureColumns_(SHEETS.SPACES);
+  const text = String(getProp_('MONTHLY_REMINDER_TEXT') || '').trim();
+  if (!text || text.toLowerCase() === 'off') return;
+  const month = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+  readTable_(SHEETS.SPACES).filter(function (r) {
+    return isYes_(r['Approved']) && isYes_(r['Monthly Reminder']) && !isYes_(r['Team Inbox']);
+  }).forEach(function (r) {
+    const space = String(r['Space ID']).trim();
+    try {
+      postMessage_(space, text, null, clientMessageId_('reminder-' + month + '-' + shortHash_(space)));
+      audit_({ space: space, action: 'MONTHLY_REMINDER', detail: month });
+    } catch (e) {
+      console.error('Monthly reminder for ' + space + ' failed: ' + e);
+    }
+  });
 }
