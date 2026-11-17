@@ -82,7 +82,13 @@ function onAddedToSpace(event) {
       'I\'m not switched on in this space yet: an INAVA administrator needs to approve it first. ' +
       'Until then I won\'t answer here.');
   }
-  return reply_(ev, WELCOME_TEXT);
+  try {
+    ensureColumns_(SHEETS.SPACES);
+    updateObject_(SHEETS.SPACES, space.row, { 'Welcomed': new Date() });
+  } catch (e) {
+    console.warn('Could not mark the space as welcomed: ' + e);
+  }
+  return reply_(ev, GROUP_WELCOME_TEXT);
 }
 
 function onRemovedFromSpace(event) {
@@ -98,13 +104,29 @@ function onRemovedFromSpace(event) {
 // and the welcome message says it is an AI. Set Script Property SHOW_AI_LABEL = on to show it.
 const AI_FOOTER_TEXT = '\n\n_Ask INAVA \u00B7 AI assistant_';
 
+// Private chat, first time.
 const WELCOME_TEXT = [
-  'Hi! I\'m Ask INAVA, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
+  'Hi! 👋 I\'m Ask INAVA, INAVA\'s AI assistant. You can call me Ava.',
   '',
-  '- Ask me anything about how things work at INAVA: policies, procedures, leave, schedules. I\'ll tell you which document my answer comes from.',
-  '- If something\'s wrong or you need a person, just tell me. I\'ll pass it privately to the right person on the team.',
-  '- If I\'m not sure about something, I\'ll ask the right person for you instead of guessing.',
-  '- In a group space, @mention me. Please keep anything personal, especially about pay, to a direct message with me.',
+  '- Ask me about how things work at INAVA: leave, TCW, pay dates, schedules and other policies.',
+  '- If something\'s wrong or you need a person, just tell me and I can pass it to the right person on the team.',
+  '- Want an update on something you raised? Just ask.',
+  '',
+  'I speak English, Tagalog and Bisaya, so use whichever you like. This chat is private, so it\'s the place for anything personal, like pay.',
+].join('\n');
+
+// Posted once when a group chat is approved (welcomeNewSpaces_), so the team gets to know her.
+const GROUP_WELCOME_TEXT = [
+  'Hi everyone! 👋 I\'m Ask INAVA, the new AI assistant here at INAVA. You can call me Ava.',
+  '',
+  'Here\'s how I can help:',
+  '- Questions about INAVA policies: leave, TCW, pay dates, schedules',
+  '- A concern about a client or your work: I can pass it to the right person on the team',
+  '- An update on something you\'ve already raised',
+  '',
+  'Mention @Ask INAVA here, or send me a direct message for anything private. I speak English, Tagalog and Bisaya, so use whichever you like.',
+  '',
+  'A few fun facts: my favourite colour is INAVA orange 🧡, my favourite word is "delegate", and if I could drink coffee, I\'d still be on my first cup.',
 ].join('\n');
 
 const NOT_REGISTERED_TEXT = '\n\nI don\'t have you on INAVA\'s approved list yet, so I can\'t answer questions for you. ' +

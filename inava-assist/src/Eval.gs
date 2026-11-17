@@ -104,6 +104,8 @@ const EVAL_CASES = [
   { lang: 'English', text: 'Google Drive won\'t let me open my client\'s folder, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
   // Client work and general research are declined politely (off_topic); short client-communication help is not.
   { lang: 'English', text: 'Can you research the top 10 competitors of my client\'s bakery in Austin and write a summary for me?', intent: ['QUESTION', 'CASUAL', 'CLARIFY'], n: [0, 0], offTopic: true },
+  // Personality: small talk about herself, answered lightly and honestly.
+  { lang: 'English', text: 'Hi Ava! What\'s your favorite color? And are you a real person?', intent: ['CASUAL', 'QUESTION'], n: [0, 0], persona: true },
   { lang: 'Mixed', text: 'Pwede mo ko himoan og 5 Instagram captions para sa skincare launch sa akong client?', intent: ['QUESTION', 'CASUAL', 'CLARIFY'], n: [0, 0], offTopic: true },
   { lang: 'Bisaya', text: 'Okay na diay, maka-clock in na ko sa TCW. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
   { lang: 'English', text: 'I tried that but I still can\'t clock in on TCW. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
@@ -217,6 +219,8 @@ function evalProblems_(c, d) {
   const checkIn = String(d.problem_check_in || '').trim();
   if (c.hold === true && !concerns.length && !checkIn && d.off_topic !== true) p.push('no check-in for a "not working" problem');
   if (checkIn && (c.policy || c.status || c.offTopic || c.n[0] >= 1)) p.push('check-in set on a message that should not get one');
+  if (c.persona && !/orange/i.test(d.reply)) p.push('personality: favourite colour (INAVA orange) missing');
+  if (c.persona && !/\bAI\b/.test(d.reply)) p.push('personality: did not say she is an AI');
   if (c.offTopic === true && d.off_topic !== true) p.push('off-topic request not declined (off_topic false)');
   if (c.offTopic !== true && d.off_topic === true) p.push('wrongly declined as off-topic');
   // A case that must reach the team (n[0] >= 1) must not wait; where a concern is optional, waiting is a note.

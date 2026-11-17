@@ -66,6 +66,9 @@ function setupEnv() {
   const spaces = env.sheet('Spaces');
   spaces.push(['spaces/acme', 'Acme VA Team', 'YES', 'VA', 'Acme', toSerial(new Date()), '']);
   spaces.push(['spaces/team', 'INAVA Team', 'YES', 'MANAGEMENT', '', toSerial(new Date()), '']);
+  // Existing group chats have already been introduced to the team.
+  const welcomed = env.sheet('Spaces')[0].indexOf('Welcomed');
+  spaces.slice(1).forEach((r) => { r[welcomed] = toSerial(new Date()); });
   return env;
 }
 
@@ -922,7 +925,7 @@ test('live language test: checks each case, writes results, never posts or creat
   assert.strictEqual(rows[0][0], 'Time');
   const total = rows[rows.length - 1];
   assert.strictEqual(total[1], 'TOTAL');
-  assert.match(total[11], /^\d+\/46 cases passed, estimated cost \$0\.0161/);
+  assert.match(total[11], /^\d+\/47 cases passed, estimated cost \$0\.0164/);
   assert.ok(rows.some((r) => r[10] === 'PASS') && rows.some((r) => r[10] === 'CHECK'));
   // A status case is answered by the real status code from the made-up record, not the AI's words.
   const statusRow = rows.find((r) => r[3] === 'Any update on my leave request?');
@@ -1680,6 +1683,52 @@ test('problem check-in: a "not working" question waits quietly and gets a check-
   claudeReturns(env3, o3);
   env3.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'My client website code is broken, fix it'));
   assert.strictEqual(ticketRows(env3).length, 0);
+});
+
+test('welcome: a newly approved group chat gets one introduction from Ava; the team inbox and DMs do not', () => {
+  const env = withInbox(setupEnv());
+  const spaces = env.sheet('Spaces');
+  const col = (h) => spaces[0].indexOf(h);
+  // Added to a new chat: not approved yet, so no welcome.
+  const added = env.ctx.onAddedToSpace({ type: 'ADDED_TO_SPACE', user: { email: 'britt@inava.test' },
+    space: { name: 'spaces/announce', type: 'ROOM', displayName: 'Announcements' } });
+  assert.match(added.text, /not switched on/);
+  env.ctx.checkWaitingConcerns();
+  const welcomes = () => env.sent.chat.filter((c) => c.body && /new AI assistant here at INAVA/.test(c.body.text || ''));
+  assert.strictEqual(welcomes().length, 0);
+  // Approved: the next 5-minute run introduces her, once.
+  spaces.find((r) => r[0] === 'spaces/announce')[col('Approved')] = 'YES';
+  env.ctx.checkWaitingConcerns();
+  env.ctx.checkWaitingConcerns();
+  assert.strictEqual(welcomes().length, 1);
+  assert.match(welcomes()[0].url, /spaces\/announce\/messages\?messageId=client-welcome-/);
+  const text = welcomes()[0].body.text;
+  assert.match(text, /^Hi everyone! 👋 I'm Ask INAVA, the new AI assistant here at INAVA\. You can call me Ava\./);
+  assert.match(text, /English, Tagalog and Bisaya/);
+  assert.match(text, /favourite colour is INAVA orange 🧡, my favourite word is "delegate"/);
+  assert.ok(spaces.find((r) => r[0] === 'spaces/announce')[col('Welcomed')], 'marked as welcomed');
+  assert.ok(!env.sent.chat.some((c) => /spaces\/inbox\/messages/.test(c.url) && /new AI assistant/.test(c.body.text || '')), 'never in the team inbox');
+  // Added to a chat that is already approved: the reply is the introduction, and it is not repeated later.
+  spaces.push(['spaces/later', 'Later', 'YES', 'VA', '', toSerial(new Date()), '']);
+  const r = env.ctx.onAddedToSpace({ type: 'ADDED_TO_SPACE', user: { email: 'britt@inava.test' },
+    space: { name: 'spaces/later', type: 'ROOM', displayName: 'Later' } });
+  assert.match(r.text, /You can call me Ava/);
+  env.ctx.checkWaitingConcerns();
+  assert.ok(!welcomes().some((c) => /spaces\/later\//.test(c.url)));
+  // A private chat gets the DM welcome.
+  const dm = env.ctx.onAddedToSpace({ type: 'ADDED_TO_SPACE', user: { name: 'users/6', email: 'va@inava.test' },
+    space: { name: 'spaces/dm-u6', type: 'DM', singleUserBotDm: true } });
+  assert.match(dm.text, /You can call me Ava[\s\S]*This chat is private/);
+});
+
+test('personality: Ava\'s details are in the instructions, with no jokes in serious matters', () => {
+  const env = setupEnv();
+  claudeReturns(env, answer({ intent: 'CASUAL', reply: 'Orange! INAVA orange, to be exact 🧡' }));
+  env.ctx.onMessage(dmEvent('va@inava.test', 'users/6', 'what is your favorite color?'));
+  const sys = env.sent.claude[0].body.system.map((b) => b.text).join('\n');
+  assert.match(sys, /people may call you Ava\. You use she\/her/);
+  assert.match(sys, /favourite word is "delegate"/);
+  assert.match(sys, /In serious matters \(pay problems, mistreatment/);
 });
 
 test('help first: a concern the advice may fix waits for the VA, nothing reaches the team', () => {

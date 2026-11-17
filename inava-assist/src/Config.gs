@@ -109,7 +109,7 @@ const SHEETS = {
   },
   SPACES: {
     name: 'Spaces',
-    headers: ['Space ID', 'Space Name', 'Approved', 'Audience', 'Client Account', 'Added On', 'Notes', 'Team Inbox', 'Morning Briefing', 'Monthly Reminder'],
+    headers: ['Space ID', 'Space Name', 'Approved', 'Audience', 'Client Account', 'Added On', 'Notes', 'Team Inbox', 'Morning Briefing', 'Monthly Reminder', 'Welcomed'],
   },
   ROUTING: {
     name: 'Routing',

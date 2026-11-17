@@ -1079,6 +1079,11 @@ function touchWaiting_(tickets) {
  * If the check-in cannot be sent, the concern goes to the team instead, so nothing is lost.
  */
 function checkWaitingConcerns() {
+  try {
+    welcomeNewSpaces_();
+  } catch (e) {
+    console.error('Welcome for new group chats failed: ' + e);
+  }
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return;
   try {
@@ -1172,5 +1177,27 @@ function clearOldOffTopicCounts_() {
   const props = PropertiesService.getScriptProperties();
   Object.keys(props.getProperties()).forEach(function (k) {
     if (k.indexOf('offtopic:') === 0 && k.indexOf('offtopic:' + today + ':') !== 0) props.deleteProperty(k);
+  });
+}
+
+/**
+ * Introduces Ask INAVA once in each group chat that has been approved since: approved, not the
+ * team inbox, Welcomed blank. Runs with the 5-minute timer, so the welcome appears within minutes
+ * of setting Approved = YES. A fixed Chat message ID means it is never posted twice.
+ */
+function welcomeNewSpaces_() {
+  resetMemo_();
+  ensureColumns_(SHEETS.SPACES);
+  readTable_(SHEETS.SPACES).filter(function (r) {
+    return isYes_(r['Approved']) && !isYes_(r['Team Inbox']) && !String(r['Welcomed'] || '').trim();
+  }).forEach(function (r) {
+    const space = String(r['Space ID']).trim();
+    try {
+      postMessage_(space, GROUP_WELCOME_TEXT, null, clientMessageId_('welcome-' + shortHash_(space)));
+      updateObject_(SHEETS.SPACES, r._row, { 'Welcomed': new Date() });
+      audit_({ space: space, action: 'WELCOMED_SPACE', detail: String(r['Space Name'] || '') });
+    } catch (e) {
+      console.error('Welcome for ' + space + ' failed: ' + e);
+    }
   });
 }

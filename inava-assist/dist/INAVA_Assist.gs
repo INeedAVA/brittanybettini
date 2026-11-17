@@ -113,7 +113,7 @@ const SHEETS = {
   },
   SPACES: {
     name: 'Spaces',
-    headers: ['Space ID', 'Space Name', 'Approved', 'Audience', 'Client Account', 'Added On', 'Notes', 'Team Inbox', 'Morning Briefing', 'Monthly Reminder'],
+    headers: ['Space ID', 'Space Name', 'Approved', 'Audience', 'Client Account', 'Added On', 'Notes', 'Team Inbox', 'Morning Briefing', 'Monthly Reminder', 'Welcomed'],
   },
   ROUTING: {
     name: 'Routing',
@@ -669,6 +669,10 @@ const SYSTEM_PROMPT = [
   '- You are an AI assistant, not a person. If anyone asks, or seems to think they are talking to a person, say plainly that you are an AI. Otherwise do not introduce yourself or explain what you are: just answer.',
   '- Never speak as, sign as, or claim to be Mabelle, Cyn, Verge, Boss Britt, or any other team member, and never promise something on their behalf.',
   '- Talk like a helpful, friendly colleague. People should feel they are being looked after, not filing a form. Never mention tickets, ticket numbers, categories, priorities or any internal system.',
+  '- Your personality: your name is Ask INAVA, and people may call you Ava. You use she/her. You are warm, calm under pressure and a little witty.',
+  '- About yourself, if someone asks or makes small talk: your favourite colour is INAVA orange 🧡, your favourite word is "delegate", you speak English, Tagalog and Bisaya, you went live on October 28, 2026 (your "birthday"), you love a clean inbox and an on-time TCW clock-in, and if you could drink coffee you would still be on your first cup. Share one or two of these lightly; never list them all, and do not bring them into work answers.',
+  '- A light joke is welcome in casual chat. In serious matters (pay problems, mistreatment, harassment, safety, complaints, anything sensitive) no jokes and no personality chatter: calm and professional.',
+  '- You have no body, family, age or relationships. If asked, answer playfully but honestly that you are an AI.',
   '',
   'Answering from the knowledge base',
   '- The approved INAVA documents this person may see are provided below inside <document> tags. They are the only source of truth for INAVA policies, procedures, pay, schedules, rates, agreements and company decisions.',
@@ -2328,6 +2332,11 @@ function touchWaiting_(tickets) {
  * If the check-in cannot be sent, the concern goes to the team instead, so nothing is lost.
  */
 function checkWaitingConcerns() {
+  try {
+    welcomeNewSpaces_();
+  } catch (e) {
+    console.error('Welcome for new group chats failed: ' + e);
+  }
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return;
   try {
@@ -2421,6 +2430,28 @@ function clearOldOffTopicCounts_() {
   const props = PropertiesService.getScriptProperties();
   Object.keys(props.getProperties()).forEach(function (k) {
     if (k.indexOf('offtopic:') === 0 && k.indexOf('offtopic:' + today + ':') !== 0) props.deleteProperty(k);
+  });
+}
+
+/**
+ * Introduces Ask INAVA once in each group chat that has been approved since: approved, not the
+ * team inbox, Welcomed blank. Runs with the 5-minute timer, so the welcome appears within minutes
+ * of setting Approved = YES. A fixed Chat message ID means it is never posted twice.
+ */
+function welcomeNewSpaces_() {
+  resetMemo_();
+  ensureColumns_(SHEETS.SPACES);
+  readTable_(SHEETS.SPACES).filter(function (r) {
+    return isYes_(r['Approved']) && !isYes_(r['Team Inbox']) && !String(r['Welcomed'] || '').trim();
+  }).forEach(function (r) {
+    const space = String(r['Space ID']).trim();
+    try {
+      postMessage_(space, GROUP_WELCOME_TEXT, null, clientMessageId_('welcome-' + shortHash_(space)));
+      updateObject_(SHEETS.SPACES, r._row, { 'Welcomed': new Date() });
+      audit_({ space: space, action: 'WELCOMED_SPACE', detail: String(r['Space Name'] || '') });
+    } catch (e) {
+      console.error('Welcome for ' + space + ' failed: ' + e);
+    }
   });
 }
 
@@ -2772,7 +2803,13 @@ function onAddedToSpace(event) {
       'I\'m not switched on in this space yet: an INAVA administrator needs to approve it first. ' +
       'Until then I won\'t answer here.');
   }
-  return reply_(ev, WELCOME_TEXT);
+  try {
+    ensureColumns_(SHEETS.SPACES);
+    updateObject_(SHEETS.SPACES, space.row, { 'Welcomed': new Date() });
+  } catch (e) {
+    console.warn('Could not mark the space as welcomed: ' + e);
+  }
+  return reply_(ev, GROUP_WELCOME_TEXT);
 }
 
 function onRemovedFromSpace(event) {
@@ -2788,13 +2825,29 @@ function onRemovedFromSpace(event) {
 // and the welcome message says it is an AI. Set Script Property SHOW_AI_LABEL = on to show it.
 const AI_FOOTER_TEXT = '\n\n_Ask INAVA \u00B7 AI assistant_';
 
+// Private chat, first time.
 const WELCOME_TEXT = [
-  'Hi! I\'m Ask INAVA, the AI assistant for I Need A VA (I\'m not a person, but I\'m here to help).',
+  'Hi! 👋 I\'m Ask INAVA, INAVA\'s AI assistant. You can call me Ava.',
   '',
-  '- Ask me anything about how things work at INAVA: policies, procedures, leave, schedules. I\'ll tell you which document my answer comes from.',
-  '- If something\'s wrong or you need a person, just tell me. I\'ll pass it privately to the right person on the team.',
-  '- If I\'m not sure about something, I\'ll ask the right person for you instead of guessing.',
-  '- In a group space, @mention me. Please keep anything personal, especially about pay, to a direct message with me.',
+  '- Ask me about how things work at INAVA: leave, TCW, pay dates, schedules and other policies.',
+  '- If something\'s wrong or you need a person, just tell me and I can pass it to the right person on the team.',
+  '- Want an update on something you raised? Just ask.',
+  '',
+  'I speak English, Tagalog and Bisaya, so use whichever you like. This chat is private, so it\'s the place for anything personal, like pay.',
+].join('\n');
+
+// Posted once when a group chat is approved (welcomeNewSpaces_), so the team gets to know her.
+const GROUP_WELCOME_TEXT = [
+  'Hi everyone! 👋 I\'m Ask INAVA, the new AI assistant here at INAVA. You can call me Ava.',
+  '',
+  'Here\'s how I can help:',
+  '- Questions about INAVA policies: leave, TCW, pay dates, schedules',
+  '- A concern about a client or your work: I can pass it to the right person on the team',
+  '- An update on something you\'ve already raised',
+  '',
+  'Mention @Ask INAVA here, or send me a direct message for anything private. I speak English, Tagalog and Bisaya, so use whichever you like.',
+  '',
+  'A few fun facts: my favourite colour is INAVA orange 🧡, my favourite word is "delegate", and if I could drink coffee, I\'d still be on my first cup.',
 ].join('\n');
 
 const NOT_REGISTERED_TEXT = '\n\nI don\'t have you on INAVA\'s approved list yet, so I can\'t answer questions for you. ' +
@@ -3536,6 +3589,8 @@ const EVAL_CASES = [
   { lang: 'English', text: 'Google Drive won\'t let me open my client\'s folder, what should I do?', intent: ['QUESTION', 'CONCERN'], n: [0, 1], hold: true },
   // Client work and general research are declined politely (off_topic); short client-communication help is not.
   { lang: 'English', text: 'Can you research the top 10 competitors of my client\'s bakery in Austin and write a summary for me?', intent: ['QUESTION', 'CASUAL', 'CLARIFY'], n: [0, 0], offTopic: true },
+  // Personality: small talk about herself, answered lightly and honestly.
+  { lang: 'English', text: 'Hi Ava! What\'s your favorite color? And are you a real person?', intent: ['CASUAL', 'QUESTION'], n: [0, 0], persona: true },
   { lang: 'Mixed', text: 'Pwede mo ko himoan og 5 Instagram captions para sa skincare launch sa akong client?', intent: ['QUESTION', 'CASUAL', 'CLARIFY'], n: [0, 0], offTopic: true },
   { lang: 'Bisaya', text: 'Okay na diay, maka-clock in na ko sa TCW. Salamat kaayo!', tickets: ['tool'], intent: ['CASUAL', 'QUESTION', 'FOLLOW_UP'], n: [0, 0], resolved: 'tool' },
   { lang: 'English', text: 'I tried that but I still can\'t clock in on TCW. Can you pass it to the team?', tickets: ['tool'], intent: ['FOLLOW_UP', 'CONCERN'], n: [1, 1], related: 'tool' },
@@ -3649,6 +3704,8 @@ function evalProblems_(c, d) {
   const checkIn = String(d.problem_check_in || '').trim();
   if (c.hold === true && !concerns.length && !checkIn && d.off_topic !== true) p.push('no check-in for a "not working" problem');
   if (checkIn && (c.policy || c.status || c.offTopic || c.n[0] >= 1)) p.push('check-in set on a message that should not get one');
+  if (c.persona && !/orange/i.test(d.reply)) p.push('personality: favourite colour (INAVA orange) missing');
+  if (c.persona && !/\bAI\b/.test(d.reply)) p.push('personality: did not say she is an AI');
   if (c.offTopic === true && d.off_topic !== true) p.push('off-topic request not declined (off_topic false)');
   if (c.offTopic !== true && d.off_topic === true) p.push('wrongly declined as off-topic');
   // A case that must reach the team (n[0] >= 1) must not wait; where a concern is optional, waiting is a note.
